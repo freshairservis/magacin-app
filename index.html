@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAGACIN</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            height: 100%;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            color: #1a1a2a;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+
+        #root {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e2e8f0;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .hamburger {
+            background: none;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: #3b82f6;
+            padding: 4px;
+        }
+
+        .header-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+
+        .header-user {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .drawer-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 200;
+        }
+
+        .drawer-overlay.active {
+            display: block;
+        }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 280px;
+            height: 100vh;
+            background: #ffffff;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+            z-index: 300;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e2e8f0;
+        }
+
+        .drawer.active {
+            transform: translateX(0);
+        }
+
+        .drawer-header {
+            padding: 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .drawer-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+
+        .drawer-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .drawer-menu {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .drawer-item {
+            padding: 14px 16px;
+            margin-bottom: 4px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #64748b;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .drawer-item:hover {
+            background: #f1f5f9;
+            color: #3b82f6;
+        }
+
+        .drawer-item.active {
+            background: #eff6ff;
+            border-left-color: #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            padding-bottom: 20px;
+        }
+
+        .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.1);
+            border-color: #cbd5e1;
+            transform: translateY(-2px);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #3b82f6;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 14px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 800;
+            color: #1e40af;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #1e40af;
+            margin-top: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            opacity: 0.7;
+        }
+
+        .warning-banner {
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            border: 1px solid #fecaca;
+            border-radius: 12px;
+            padding: 14px;
+            color: #991b1b;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .list-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+
+        .list-item:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+            transform: translateX(4px);
+        }
+
+        .item-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #3b82f6;
+            margin-bottom: 4px;
+        }
+
+        .item-meta {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .item-value {
+            font-size: 13px;
+            color: #15803d;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 12px;
+        }
+
+        th {
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #64748b;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 11px;
+            text-transform: uppercase;
+            background: #f8fafc;
+        }
+
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-small {
+            width: auto;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #1a1a2a;
+            margin-bottom: 6px;
+        }
+
+        input, select {
+            width: 100%;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            color: #1a1a2a;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        @media (min-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+
+            .form-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .hamburger {
+                display: none;
+            }
+
+            .drawer {
+                display: none;
+            }
+
+            .drawer-overlay {
+                display: none !important;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script>
+        class DataManager {
+            constructor() {
+                this.init();
+            }
+
+            init() {
+                if (!localStorage.getItem('magacin_init')) {
+                    this.seedData();
+                    localStorage.setItem('magacin_init', 'true');
+                }
+            }
+
+            seedData() {
+                const materijali = [
+                    { id: '1', naziv: 'Kabl NYM 2.5mm²', sku: 'KBL-NYM-2.5', jedinica: 'kom', nabavna: 15, prodajna: 25 },
+                    { id: '2', naziv: 'Kabl NYM 4mm²', sku: 'KBL-NYM-4', jedinica: 'kom', nabavna: 28, prodajna: 42 },
+                    { id: '3', naziv: 'Prekidač 10A', sku: 'PRE-10A', jedinica: 'kom', nabavna: 8, prodajna: 15 },
+                    { id: '4', naziv: 'Utičnica 10A', sku: 'UTE-10A', jedinica: 'kom', nabavna: 7, prodajna: 12 },
+                    { id: '5', naziv: 'Sigurnosna cev', sku: 'CEV-16', jedinica: 'm', nabavna: 2, prodajna: 4 }
+                ];
+
+                const transakcije = [
+                    { id: '101', materijal_id: '1', tip: 'ulaz', količina: 50, posao_id: null, datum: new Date().toISOString() },
+                    { id: '102', materijal_id: '2', tip: 'ulaz', količina: 30, posao_id: null, datum: new Date().toISOString() },
+                    { id: '103', materijal_id: '1', tip: 'izlaz', količina: 10, posao_id: '1', datum: new Date().toISOString() }
+                ];
+
+                const poslovi = [
+                    { id: '1', naziv: 'Elektro apt. 5B', lokacija: 'Beograd', datumPoc: '2025-07-01', datumZav: '2025-07-10' }
+                ];
+
+                localStorage.setItem('materijali', JSON.stringify(materijali));
+                localStorage.setItem('transakcije', JSON.stringify(transakcije));
+                localStorage.setItem('poslovi', JSON.stringify(poslovi));
+            }
+
+            getMaterijali() { return JSON.parse(localStorage.getItem('materijali') || '[]'); }
+            getTransakcije() { return JSON.parse(localStorage.getItem('transakcije') || '[]'); }
+            getPoslovi() { return JSON.parse(localStorage.getItem('poslovi') || '[]'); }
+
+            addMaterijal(n, s, j, na, pr) {
+                const m = this.getMaterijali();
+                m.push({ id: Date.now().toString(), naziv: n, sku: s, jedinica: j, nabavna: parseFloat(na), prodajna: parseFloat(pr) });
+                localStorage.setItem('materijali', JSON.stringify(m));
+            }
+
+            addTransakcija(m_id, tip, kol, p_id) {
+                const t = this.getTransakcije();
+                t.push({ id: Date.now().toString(), materijal_id: m_id, tip, količina: parseFloat(kol), posao_id: p_id || null, datum: new Date().toISOString() });
+                localStorage.setItem('transakcije', JSON.stringify(t));
+            }
+
+            addPosao(n, l, dp, dz) {
+                const p = this.getPoslovi();
+                p.push({ id: Date.now().toString(), naziv: n, lokacija: l, datumPoc: dp, datumZav: dz });
+                localStorage.setItem('poslovi', JSON.stringify(p));
+            }
+
+            deleteItem(lista, id) {
+                const items = JSON.parse(localStorage.getItem(lista) || '[]');
+                const filtered = items.filter(i => i.id !== id);
+                localStorage.setItem(lista, JSON.stringify(filtered));
+            }
+
+            getInventura() {
+                const mat = this.getMaterijali();
+                const trans = this.getTransakcije();
+                return mat.map(m => {
+                    const ulazi = trans.filter(t => t.materijal_id === m.id && t.tip === 'ulaz').reduce((s, t) => s + t.količina, 0);
+                    const izlazi = trans.filter(t => t.materijal_id === m.id && t.tip === 'izlaz').reduce((s, t) => s + t.količina, 0);
+                    const stanje = ulazi - izlazi;
+                    return { ...m, stanje, vrednost: stanje * m.prodajna };
+                });
+            }
+
+            getFinancijski() {
+                const inv = this.getInventura();
+                let nabavna = 0, prodajna = 0;
+                inv.forEach(i => {
+                    if (i.stanje > 0) {
+                        nabavna += i.stanje * i.nabavna;
+                        prodajna += i.vrednost;
+                    }
+                });
+                return { nabavna, prodajna, profit: prodajna - nabavna };
+            }
+        }
+
+        class MagacinApp {
+            constructor() {
+                this.db = new DataManager();
+                this.stranica = 'pocetna';
+                this.drawerOpen = false;
+                this.render();
+            }
+
+            render() {
+                const root = document.getElementById('root');
+                root.innerHTML = '';
+
+                const header = document.createElement('div');
+                header.className = 'header';
+                header.innerHTML = `
+                    <div class="header-left">
+                        <button class="hamburger" onclick="app.toggleDrawer()">☰</button>
+                        <div class="header-title">📦 MAGACIN</div>
+                    </div>
+                    <div class="header-user">👤 Marko</div>
+                `;
+                root.appendChild(header);
+
+                const overlay = document.createElement('div');
+                overlay.className = `drawer-overlay ${this.drawerOpen ? 'active' : ''}`;
+                overlay.onclick = () => this.toggleDrawer();
+                root.appendChild(overlay);
+
+                const drawer = document.createElement('div');
+                drawer.className = `drawer ${this.drawerOpen ? 'active' : ''}`;
+                drawer.innerHTML = `
+                    <div class="drawer-header">
+                        <div class="drawer-title">MENU</div>
+                        <button class="drawer-close" onclick="app.toggleDrawer()">✕</button>
+                    </div>
+                    <div class="drawer-menu">
+                        <div class="drawer-item ${this.stranica === 'pocetna' ? 'active' : ''}" onclick="app.idiNa('pocetna')">📊 Početna</div>
+                        <div class="drawer-item ${this.stranica === 'ulazi' ? 'active' : ''}" onclick="app.idiNa('ulazi')">📥 Ulazi</div>
+                        <div class="drawer-item ${this.stranica === 'izlazi' ? 'active' : ''}" onclick="app.idiNa('izlazi')">📤 Izlazi</div>
+                        <div class="drawer-item ${this.stranica === 'materijali' ? 'active' : ''}" onclick="app.idiNa('materijali')">🔧 Materijali</div>
+                        <div class="drawer-item ${this.stranica === 'poslovi' ? 'active' : ''}" onclick="app.idiNa('poslovi')">💼 Poslovi</div>
+                        <div class="drawer-item ${this.stranica === 'stanje' ? 'active' : ''}" onclick="app.idiNa('stanje')">📦 Stanje</div>
+                        <div class="drawer-item ${this.stranica === 'sopingLista' ? 'active' : ''}" onclick="app.idiNa('sopingLista')">🛒 Šoping Lista</div>
+                    </div>
+                `;
+                root.appendChild(drawer);
+
+                const content = document.createElement('div');
+                content.className = 'content';
+
+                if (this.stranica === 'pocetna') {
+                    content.appendChild(this.renderPocetna());
+                } else if (this.stranica === 'ulazi') {
+                    content.appendChild(this.renderUlazi());
+                } else if (this.stranica === 'izlazi') {
+                    content.appendChild(this.renderIzlazi());
+                } else if (this.stranica === 'materijali') {
+                    content.appendChild(this.renderMaterijali());
+                } else if (this.stranica === 'poslovi') {
+                    content.appendChild(this.renderPoslovi());
+                } else if (this.stranica === 'stanje') {
+                    content.appendChild(this.renderStanje());
+                } else if (this.stranica === 'sopingLista') {
+                    content.appendChild(this.renderSopingLista());
+                }
+
+                root.appendChild(content);
+            }
+
+            renderPocetna() {
+                const div = document.createElement('div');
+                const inv = this.db.getInventura();
+                const trans = this.db.getTransakcije();
+                const fin = this.db.getFinancijski();
+
+                const ukupnoStavki = inv.reduce((s, i) => s + i.stanje, 0);
+                const ukupnaVrednost = inv.reduce((s, i) => s + i.vrednost, 0);
+                const niska = inv.filter(i => i.stanje <= 3).length;
+
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">📊 Ključne Metrike</div>
+                        <div class="stats-grid">
+                            <div class="stat-box">
+                                <div class="stat-value">${ukupnoStavki}</div>
+                                <div class="stat-label">Stavki</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${ukupnaVrednost.toFixed(0)}</div>
+                                <div class="stat-label">RSD</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${trans.length}</div>
+                                <div class="stat-label">Trans.</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${fin.profit.toFixed(0)}</div>
+                                <div class="stat-label">Profit</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${niska > 0 ? `<div class="warning-banner">⚠️ <strong>${niska} materijala</strong> sa niskom zalihom<br>🛒 Trebalo kupiti ~${(niska * 5000).toFixed(0)} RSD</div>` : ''}
+
+                    <div class="card">
+                        <div class="card-title">📋 Poslednje Transakcije</div>
+                        ${trans.slice(-5).reverse().map(t => {
+                            const mat = this.db.getMaterijali().find(m => m.id === t.materijal_id);
+                            return `<div class="list-item"><div class="item-title">${t.tip === 'ulaz' ? '📥' : '📤'} ${mat?.naziv}</div><div class="item-meta">Količina: ${t.količina} ${mat?.jedinica}</div></div>`;
+                        }).join('')}
+                    </div>
+                `;
+
+                return div;
+            }
+
+            renderUlazi() {
+                const div = document.createElement('div');
+                const mat = this.db.getMaterijali();
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">📥 Novi Ulaz (Nabavka)</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Materijal</label>
+                                <select id="matUlaz">
+                                    <option value="">-- Odaberi --</option>
+                                    ${mat.map(m => `<option value="${m.id}">${m.naziv}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Količina</label>
+                                <input type="number" id="kolUlaz" placeholder="0" min="0">
+                            </div>
+                        </div>
+                        <button class="btn" onclick="app.dodajUlaz()" style="margin-top: 12px;">Spremi Ulaz</button>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Poslednji Ulazi</div>
+                        <table>
+                            <thead><tr><th>Materijal</th><th>Količina</th><th></th></tr></thead>
+                            <tbody>
+                                ${this.db.getTransakcije().filter(t => t.tip === 'ulaz').slice(-5).reverse().map(t => {
+                                    const m = this.db.getMaterijali().find(x => x.id === t.materijal_id);
+                                    return `<tr><td>${m?.naziv}</td><td>${t.količina}</td><td><button class="btn btn-danger btn-small" onclick="app.obrisiTrans('${t.id}')">X</button></td></tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                return div;
+            }
+
+            renderIzlazi() {
+                const div = document.createElement('div');
+                const mat = this.db.getMaterijali();
+                const pos = this.db.getPoslovi();
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">📤 Novi Izlaz (Potrošnja)</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Materijal</label>
+                                <select id="matIzlaz">
+                                    <option value="">-- Odaberi --</option>
+                                    ${mat.map(m => `<option value="${m.id}">${m.naziv}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Količina</label>
+                                <input type="number" id="kolIzlaz" placeholder="0" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Posao</label>
+                                <select id="posaoIzlaz">
+                                    <option value="">-- Bez Posla --</option>
+                                    ${pos.map(p => `<option value="${p.id}">${p.naziv}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="app.dodajIzlaz()" style="margin-top: 12px;">Spremi Izlaz</button>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Poslednji Izlazi</div>
+                        <table>
+                            <thead><tr><th>Materijal</th><th>Količina</th><th></th></tr></thead>
+                            <tbody>
+                                ${this.db.getTransakcije().filter(t => t.tip === 'izlaz').slice(-5).reverse().map(t => {
+                                    const m = this.db.getMaterijali().find(x => x.id === t.materijal_id);
+                                    return `<tr><td>${m?.naziv}</td><td>${t.količina}</td><td><button class="btn btn-danger btn-small" onclick="app.obrisiTrans('${t.id}')">X</button></td></tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                return div;
+            }
+
+            renderMaterijali() {
+                const div = document.createElement('div');
+                const mat = this.db.getMaterijali();
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">➕ Novi Materijal</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Naziv</label>
+                                <input type="text" id="nazMat" placeholder="npr. Kabl NYM 2.5mm²">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">SKU</label>
+                                <input type="text" id="skuMat" placeholder="npr. KBL-2.5">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Jedinica</label>
+                                <input type="text" id="jedMat" placeholder="kom, m, kg...">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Nabavna Cena</label>
+                                <input type="number" id="nabMat" placeholder="0.00" step="0.01">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Prodajna Cena</label>
+                                <input type="number" id="prodMat" placeholder="0.00" step="0.01">
+                            </div>
+                        </div>
+                        <button class="btn" onclick="app.dodajMat()" style="margin-top: 12px;">Dodaj Materijal</button>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Svi Materijali</div>
+                        <table>
+                            <thead><tr><th>Naziv</th><th>Nabavna</th><th>Prodajna</th><th></th></tr></thead>
+                            <tbody>
+                                ${mat.map(m => {
+                                    const marza = ((m.prodajna - m.nabavna) / m.nabavna * 100).toFixed(0);
+                                    return `<tr><td>${m.naziv}</td><td>${m.nabavna}</td><td>${m.prodajna}</td><td><button class="btn btn-danger btn-small" onclick="app.obrisiMat('${m.id}')">X</button></td></tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                return div;
+            }
+
+            renderPoslovi() {
+                const div = document.createElement('div');
+                const pos = this.db.getPoslovi();
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">➕ Novi Posao</div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Naziv</label>
+                                <input type="text" id="nazPos" placeholder="npr. Elektro apt. 5B">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Lokacija</label>
+                                <input type="text" id="lokPos" placeholder="npr. Beograd">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Datum Početka</label>
+                                <input type="date" id="datPoc">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Datum Završetka</label>
+                                <input type="date" id="datZav">
+                            </div>
+                        </div>
+                        <button class="btn" onclick="app.dodajPos()" style="margin-top: 12px;">Kreiraj Posao</button>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Svi Poslovi</div>
+                        ${pos.map(p => `<div class="list-item"><div class="item-title">${p.naziv}</div><div class="item-meta">${p.lokacija}</div><button class="btn btn-danger btn-small" onclick="app.obrisiPos('${p.id}')" style="margin-top: 8px;">Obriši</button></div>`).join('')}
+                    </div>
+                `;
+                return div;
+            }
+
+            renderStanje() {
+                const div = document.createElement('div');
+                const inv = this.db.getInventura();
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">📦 Stanje Magacina</div>
+                        <table>
+                            <thead><tr><th>Materijal</th><th>Stanje</th><th>Vrednost</th></tr></thead>
+                            <tbody>
+                                ${inv.filter(i => i.stanje > 0).map(i => `<tr><td>${i.naziv}</td><td>${i.stanje} ${i.jedinica} ${i.stanje <= 3 ? '<span class="badge badge-danger">NISKA</span>' : ''}</td><td>${i.vrednost.toFixed(0)} RSD</td></tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                return div;
+            }
+
+            renderSopingLista() {
+                const div = document.createElement('div');
+                const inv = this.db.getInventura();
+                const niska = inv.filter(i => i.stanje <= 3);
+                div.innerHTML = `
+                    <div class="card">
+                        <div class="card-title">🛒 Šoping Lista</div>
+                        ${niska.length > 0 ? `
+                            <table>
+                                <thead><tr><th>Materijal</th><th>Imaš</th><th>Preporuka</th></tr></thead>
+                                <tbody>
+                                    ${niska.map(i => `<tr><td>${i.naziv}</td><td>${i.stanje}</td><td>${20 - i.stanje}</td></tr>`).join('')}
+                                </tbody>
+                            </table>
+                        ` : '<div style="color: #15803d; text-align: center; padding: 20px;">✓ Sve je na zalihi</div>'}
+                    </div>
+                `;
+                return div;
+            }
+
+            dodajUlaz() {
+                const mat_id = document.getElementById('matUlaz').value;
+                const kol = document.getElementById('kolUlaz').value;
+                if (mat_id && kol) {
+                    this.db.addTransakcija(mat_id, 'ulaz', kol, null);
+                    this.idiNa('ulazi');
+                }
+            }
+
+            dodajIzlaz() {
+                const mat_id = document.getElementById('matIzlaz').value;
+                const kol = document.getElementById('kolIzlaz').value;
+                const pos_id = document.getElementById('posaoIzlaz').value;
+                if (mat_id && kol) {
+                    this.db.addTransakcija(mat_id, 'izlaz', kol, pos_id);
+                    this.idiNa('izlazi');
+                }
+            }
+
+            dodajMat() {
+                const n = document.getElementById('nazMat').value;
+                const s = document.getElementById('skuMat').value;
+                const j = document.getElementById('jedMat').value;
+                const na = document.getElementById('nabMat').value;
+                const pr = document.getElementById('prodMat').value;
+                if (n && s && j && na && pr) {
+                    this.db.addMaterijal(n, s, j, na, pr);
+                    this.idiNa('materijali');
+                }
+            }
+
+            dodajPos() {
+                const n = document.getElementById('nazPos').value;
+                const l = document.getElementById('lokPos').value;
+                const dp = document.getElementById('datPoc').value;
+                const dz = document.getElementById('datZav').value;
+                if (n && l && dp && dz) {
+                    this.db.addPosao(n, l, dp, dz);
+                    this.idiNa('poslovi');
+                }
+            }
+
+            obrisiTrans(id) { if (confirm('Obriši?')) { this.db.deleteItem('transakcije', id); this.render(); } }
+            obrisiMat(id) { if (confirm('Obriši?')) { this.db.deleteItem('materijali', id); this.render(); } }
+            obrisiPos(id) { if (confirm('Obriši?')) { this.db.deleteItem('poslovi', id); this.render(); } }
+
+            toggleDrawer() {
+                this.drawerOpen = !this.drawerOpen;
+                this.render();
+            }
+
+            idiNa(stranica) {
+                this.stranica = stranica;
+                this.drawerOpen = false;
+                this.render();
+            }
+        }
+
+        const app = new MagacinApp();
+    </script>
+</body>
+</html>
