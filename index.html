@@ -299,6 +299,24 @@
             font-size: 14px;
         }
 
+        .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .chip {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            padding: 6px 13px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .chip.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #ffffff;
+        }
+
         /* ---------- BADGES ---------- */
         .badge {
             display: inline-block;
@@ -427,7 +445,7 @@
             migrate() {
                 // normalizuj stare zapise (količina -> kolicina, dodaj minZaliha, status posla)
                 const mats = this.get('materijali').map(m => ({
-                    minZaliha: 3, ...m,
+                    kategorija: '', ...m,
                     nabavna: num(m.nabavna), prodajna: num(m.prodajna), minZaliha: m.minZaliha != null ? num(m.minZaliha) : 3
                 }));
                 const trans = this.get('transakcije').map(t => ({
@@ -478,6 +496,32 @@
             }
             deleteTransakcija(id) {
                 this.set('transakcije', this.get('transakcije').filter(t => t.id !== id));
+            }
+            updateTransakcija(id, data) {
+                this.set('transakcije', this.get('transakcije').map(t => t.id === id ? { ...t, ...data } : t));
+            }
+            transakcija(id) { return this.get('transakcije').find(t => t.id === id); }
+
+            // rucne stavke na soping listi
+            getSoping() { return this.get('soping'); }
+            addSoping(data) {
+                const s = this.get('soping');
+                s.push({ id: uid(), ...data });
+                this.set('soping', s);
+            }
+            deleteSoping(id) { this.set('soping', this.get('soping').filter(x => x.id !== id)); }
+
+            kategorije() {
+                return [...new Set(this.get('materijali').map(m => (m.kategorija || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'sr'));
+            }
+
+            nedavniMaterijali(n = 5) {
+                const ids = [];
+                for (const t of this.getTransakcije()) {
+                    if (!ids.includes(t.materijal_id)) ids.push(t.materijal_id);
+                    if (ids.length >= n) break;
+                }
+                return ids.map(id => this.materijal(id)).filter(Boolean);
             }
 
             addPosao(data) {
@@ -576,6 +620,7 @@
             stanje:     { naslov: '📊 Stanje',       sub: 'Trenutne zalihe' },
             istorija:   { naslov: '🕘 Istorija',     sub: 'Sve transakcije' },
             soping:     { naslov: '🛒 Šoping lista', sub: 'Šta treba kupiti' },
+            popis:      { naslov: '📋 Popis',        sub: 'Svođenje stanja magacina' },
             izvestaji:  { naslov: '📈 Izveštaji',    sub: 'Finansijski pregled' },
             podesavanja:{ naslov: '⚙️ Podešavanja',  sub: 'Podaci i backup' }
         };
@@ -586,6 +631,8 @@
                 this.stranica = 'pocetna';
                 this.drawerOpen = false;
                 this.filter = '';
+                this.korpa = { ulaz: [], izlaz: [] };
+                this.popisV = {};
                 this.render();
             }
 
@@ -629,6 +676,7 @@
                 this.stranica = stranica;
                 this.filter = '';
                 this.istF = null;
+                this.katF = '';
                 if (this.drawerOpen) this.toggleDrawer();
                 this.render();
             }
@@ -663,6 +711,7 @@
                         ${item('stanje', '📊', 'Stanje')}
                         ${item('istorija', '🕘', 'Istorija')}
                         ${item('soping', '🛒', 'Šoping lista', niska || '')}
+                        ${item('popis', '📋', 'Popis')}
                         ${item('materijali', '🔧', 'Materijali')}
                         ${item('poslovi', '💼', 'Poslovi')}
                         ${item('izvestaji', '📈', 'Izveštaji')}
@@ -718,6 +767,8 @@
 
                     ${niska.length ? `<div class="warning-banner" onclick="app.idiNa('soping')">⚠️ <strong>${niska.length} ${niska.length === 1 ? 'materijal je' : 'materijala je'} na niskoj zalihi.</strong><br>Dodirni za šoping listu →</div>` : ''}
 
+                    ${this.backupUpozorenje(trans.length)}
+
                     <div class="card">
                         <div class="card-title">Brze akcije</div>
                         <div class="btn-row">
@@ -741,101 +792,179 @@
                 `;
             }
 
-            /* ---------- ULAZI ---------- */
-            render_ulazi() {
+            backupUpozorenje(brTrans) {
+                if (brTrans < 5) return '';
+                const zadnji = localStorage.getItem('magacin_lastBackup');
+                const dana = zadnji ? Math.floor((Date.now() - new Date(zadnji)) / 86400000) : null;
+                if (zadnji && dana < 7) return '';
+                return `<div class="warning-banner" style="background:linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%); border-color:#fde68a; color:#92400e;" onclick="app.idiNa('podesavanja')">
+                    💾 ${zadnji ? `Backup je star <strong>${dana} dana</strong>.` : '<strong>Nikad nisi izvezao backup!</strong>'} Podaci žive samo u ovom browseru.<br>Dodirni za izvoz →
+                </div>`;
+            }
+
+            /* ---------- KORPA UNOS (ULAZ / IZLAZ) ---------- */
+            render_ulazi() { return this.renderKorpaStrana('ulaz'); }
+            render_izlazi() { return this.renderKorpaStrana('izlaz'); }
+
+            renderKorpaStrana(tip) {
                 const mats = this.db.getMaterijali();
-                const ulazi = this.db.getTransakcije().filter(t => t.tip === 'ulaz').slice(0, 15);
-
-                return `
-                    <div class="card">
-                        <div class="card-title">Novi ulaz (nabavka)</div>
-                        ${mats.length ? `
-                        <div class="form-group">
-                            <label class="form-label">Materijal</label>
-                            <select id="fMat">${mats.map(m => `<option value="${m.id}">${esc(m.naziv)} (${esc(m.jedinica)})</option>`).join('')}</select>
-                        </div>
-                        <div class="form-grid2">
-                            <div class="form-group">
-                                <label class="form-label">Količina</label>
-                                <input type="number" id="fKol" inputmode="decimal" placeholder="0" min="0" step="any">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Nova nab. cena (opciono)</label>
-                                <input type="number" id="fCena" inputmode="decimal" placeholder="ostaje ista" min="0" step="any">
-                            </div>
-                        </div>
-                        <button class="btn" onclick="app.sacuvajUlaz()">Sačuvaj ulaz</button>
-                        ` : `<div class="empty-state"><div class="big">🔧</div>Prvo dodaj materijale u šifarnik.<br><br><button class="btn btn-small" onclick="app.idiNa('materijali')">Idi na Materijale</button></div>`}
-                    </div>
-
-                    <div class="card">
-                        <div class="card-title">Poslednji ulazi</div>
-                        ${ulazi.length ? ulazi.map(t => this.transRed(t)).join('') : '<div class="empty-state">Nema ulaza.</div>'}
-                    </div>
-                `;
-            }
-
-            sacuvajUlaz() {
-                const mid = document.getElementById('fMat').value;
-                const kol = num(document.getElementById('fKol').value);
-                if (!mid || kol <= 0) return this.toast('Unesi ispravnu količinu', 'error');
-                const novaCena = num(document.getElementById('fCena').value);
-                if (novaCena > 0) this.db.updateMaterijal(mid, { nabavna: novaCena });
-                this.db.addTransakcija({ materijal_id: mid, tip: 'ulaz', kolicina: kol, posao_id: null });
-                this.toast('Ulaz sačuvan ✓', 'success');
-                this.render();
-            }
-
-            /* ---------- IZLAZI ---------- */
-            render_izlazi() {
-                const inv = this.db.getInventura().filter(i => i.stanje > 0);
+                const korpa = this.korpa[tip];
                 const poslovi = this.db.getPoslovi().filter(p => p.status === 'aktivan');
-                const izlazi = this.db.getTransakcije().filter(t => t.tip === 'izlaz').slice(0, 15);
+                const poslednje = this.db.getTransakcije().filter(t => t.tip === tip).slice(0, 10);
+                const danas = new Date().toISOString().slice(0, 10);
+
+                if (!mats.length) return `<div class="card"><div class="empty-state"><div class="big">🔧</div>Prvo dodaj materijale u šifarnik.<br><br><button class="btn btn-small" onclick="app.idiNa('materijali')">Idi na Materijale</button></div></div>`;
+
+                const stavke = korpa.map((s, i) => {
+                    const m = this.db.materijal(s.materijal_id);
+                    return `<div class="list-item">
+                        <div class="list-row">
+                            <div>
+                                <div class="item-title">${esc(m.naziv)}</div>
+                                <div class="item-meta">${fmt(s.kolicina)} ${esc(m.jedinica)}${s.cena ? ' • nova cena: ' + fmt(s.cena) + ' RSD' : ''}</div>
+                            </div>
+                            <button class="icon-btn danger" onclick="app.korpaUkloni('${tip}', ${i})">🗑</button>
+                        </div>
+                    </div>`;
+                }).join('');
 
                 return `
                     <div class="card">
-                        <div class="card-title">Novi izlaz (potrošnja)</div>
-                        ${inv.length ? `
-                        <div class="form-group">
-                            <label class="form-label">Materijal (na stanju)</label>
-                            <select id="fMat">${inv.map(m => `<option value="${m.id}">${esc(m.naziv)} — ${fmt(m.stanje)} ${esc(m.jedinica)}</option>`).join('')}</select>
-                        </div>
-                        <div class="form-grid2">
+                        <div class="card-title">${tip === 'ulaz' ? '📥 Novi ulaz (nabavka)' : '📤 Novi izlaz (potrošnja)'} ${korpa.length ? `<span class="badge badge-blue">${korpa.length} ${korpa.length === 1 ? 'stavka' : 'stavke/i'}</span>` : ''}</div>
+                        ${stavke || '<div class="empty-state">Korpa je prazna.<br>Dodaj materijale pa sačuvaj sve odjednom.</div>'}
+                        <button class="btn btn-ghost" style="margin-top:10px;" onclick="app.otvoriPicker('${tip}')">➕ Dodaj materijal</button>
+                        ${korpa.length ? `
+                        <div class="form-grid2" style="margin-top:12px;">
                             <div class="form-group">
-                                <label class="form-label">Količina</label>
-                                <input type="number" id="fKol" inputmode="decimal" placeholder="0" min="0" step="any">
+                                <label class="form-label">Datum</label>
+                                <input type="date" id="fDatum" value="${danas}" max="${danas}">
                             </div>
+                            ${tip === 'izlaz' ? `
                             <div class="form-group">
                                 <label class="form-label">Posao</label>
                                 <select id="fPosao">
                                     <option value="">— bez posla —</option>
                                     ${poslovi.map(p => `<option value="${p.id}">${esc(p.naziv)}</option>`).join('')}
                                 </select>
-                            </div>
+                            </div>` : '<div></div>'}
                         </div>
-                        <button class="btn btn-success" onclick="app.sacuvajIzlaz()">Sačuvaj izlaz</button>
-                        ` : `<div class="empty-state"><div class="big">📦</div>Nema materijala na stanju.<br>Prvo unesi ulaz.</div>`}
+                        <button class="btn ${tip === 'izlaz' ? 'btn-success' : ''}" onclick="app.sacuvajKorpu('${tip}')">Sačuvaj ${korpa.length > 1 ? 'sve stavke' : 'stavku'}</button>
+                        ` : ''}
                     </div>
 
                     <div class="card">
-                        <div class="card-title">Poslednji izlazi</div>
-                        ${izlazi.length ? izlazi.map(t => this.transRed(t)).join('') : '<div class="empty-state">Nema izlaza.</div>'}
+                        <div class="card-title">Poslednji ${tip === 'ulaz' ? 'ulazi' : 'izlazi'}</div>
+                        ${poslednje.length ? poslednje.map(t => this.transRed(t)).join('') : '<div class="empty-state">Nema transakcija.</div>'}
                     </div>
                 `;
             }
 
-            sacuvajIzlaz() {
-                const mid = document.getElementById('fMat').value;
-                const kol = num(document.getElementById('fKol').value);
-                const posao = document.getElementById('fPosao').value || null;
-                if (!mid || kol <= 0) return this.toast('Unesi ispravnu količinu', 'error');
-                const stanje = this.db.stanje(mid);
-                if (kol > stanje) {
-                    const m = this.db.materijal(mid);
-                    return this.toast(`Nema dovoljno na stanju (imaš ${fmt(stanje)} ${m.jedinica})`, 'error');
+            /* --- picker materijala sa pretragom --- */
+            otvoriPicker(tip) {
+                this.pickerTip = tip;
+                this.pickerF = '';
+                this.modal(`
+                    <div class="modal-title">Izaberi materijal <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <input class="search-input" id="pickerSearch" placeholder="🔍 Kucaj naziv, šifru ili kategoriju..." autocomplete="off"
+                        oninput="app.pickerF=this.value; app.osveziListu('pickerLista', app.pickerLista())">
+                    <div id="pickerLista" style="margin-top:10px; max-height:50vh; overflow-y:auto;">${this.pickerLista()}</div>
+                `);
+                setTimeout(() => { const el = document.getElementById('pickerSearch'); if (el) el.focus(); }, 100);
+            }
+
+            pickerLista() {
+                const tip = this.pickerTip;
+                const f = (this.pickerF || '').toLowerCase();
+                let inv = this.db.getInventura();
+                if (tip === 'izlaz') inv = inv.filter(i => i.stanje > 0);
+
+                const red = m => `<div class="list-item" style="cursor:pointer;" onclick="app.pickerIzbor('${m.id}')">
+                    <div class="list-row">
+                        <div>
+                            <div class="item-title">${esc(m.naziv)}</div>
+                            <div class="item-meta">${m.kategorija ? esc(m.kategorija) + ' • ' : ''}na stanju: ${fmt(m.stanje)} ${esc(m.jedinica)}</div>
+                        </div>
+                        <span style="color:#3b82f6; font-size:18px;">›</span>
+                    </div>
+                </div>`;
+
+                if (!f) {
+                    const nedavniIds = this.db.nedavniMaterijali(5).map(m => m.id);
+                    const nedavni = inv.filter(i => nedavniIds.includes(i.id))
+                        .sort((a, b) => nedavniIds.indexOf(a.id) - nedavniIds.indexOf(b.id));
+                    const ostali = inv.filter(i => !nedavniIds.includes(i.id));
+                    return (nedavni.length ? `<div class="item-meta" style="margin-bottom:6px;">🕘 NEDAVNO KORIŠĆENI</div>${nedavni.map(red).join('')}<div class="item-meta" style="margin:10px 0 6px;">SVI MATERIJALI</div>` : '')
+                        + (ostali.length ? ostali.map(red).join('') : (nedavni.length ? '' : '<div class="empty-state">Nema materijala' + (tip === 'izlaz' ? ' na stanju' : '') + '.</div>'));
                 }
-                this.db.addTransakcija({ materijal_id: mid, tip: 'izlaz', kolicina: kol, posao_id: posao });
-                this.toast('Izlaz sačuvan ✓', 'success');
+                const nadjeni = inv.filter(m =>
+                    m.naziv.toLowerCase().includes(f) || (m.sku || '').toLowerCase().includes(f) || (m.kategorija || '').toLowerCase().includes(f));
+                return nadjeni.length ? nadjeni.map(red).join('') : '<div class="empty-state">Ništa nije nađeno za „' + esc(this.pickerF) + '".</div>';
+            }
+
+            pickerIzbor(mid) {
+                const tip = this.pickerTip;
+                const m = this.db.getInventura().find(i => i.id === mid);
+                this.modal(`
+                    <div class="modal-title">${esc(m.naziv)} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="item-meta" style="margin-bottom:12px;">Na stanju: <strong>${fmt(m.stanje)} ${esc(m.jedinica)}</strong>${tip === 'ulaz' ? ' • trenutna nab. cena: ' + fmt(m.nabavna) + ' RSD' : ''}</div>
+                    <div class="form-grid2">
+                        <div class="form-group">
+                            <label class="form-label">Količina (${esc(m.jedinica)})</label>
+                            <input type="number" id="kKol" inputmode="decimal" placeholder="0" min="0" step="any">
+                        </div>
+                        ${tip === 'ulaz' ? `
+                        <div class="form-group">
+                            <label class="form-label">Nova nab. cena (opciono)</label>
+                            <input type="number" id="kCena" inputmode="decimal" placeholder="ostaje ${fmt(m.nabavna)}" min="0" step="any">
+                        </div>` : '<div></div>'}
+                    </div>
+                    <button class="btn" onclick="app.korpaDodaj('${mid}')">Dodaj u korpu</button>
+                `);
+                setTimeout(() => { const el = document.getElementById('kKol'); if (el) el.focus(); }, 100);
+            }
+
+            korpaDodaj(mid) {
+                const tip = this.pickerTip;
+                const kol = num(document.getElementById('kKol').value);
+                if (kol <= 0) return this.toast('Unesi ispravnu količinu', 'error');
+                if (tip === 'izlaz') {
+                    const uKorpi = this.korpa.izlaz.filter(s => s.materijal_id === mid).reduce((s, x) => s + x.kolicina, 0);
+                    const stanje = this.db.stanje(mid);
+                    if (kol + uKorpi > stanje) {
+                        const m = this.db.materijal(mid);
+                        return this.toast(`Nema dovoljno — na stanju ${fmt(stanje)} ${m.jedinica}${uKorpi ? ', u korpi već ' + fmt(uKorpi) : ''}`, 'error');
+                    }
+                }
+                const stavka = { materijal_id: mid, kolicina: kol };
+                if (tip === 'ulaz') {
+                    const cena = num(document.getElementById('kCena').value);
+                    if (cena > 0) stavka.cena = cena;
+                }
+                this.korpa[tip].push(stavka);
+                this.closeModal();
+                this.render();
+            }
+
+            korpaUkloni(tip, i) {
+                this.korpa[tip].splice(i, 1);
+                this.render();
+            }
+
+            sacuvajKorpu(tip) {
+                const korpa = this.korpa[tip];
+                if (!korpa.length) return;
+                const datumStr = document.getElementById('fDatum').value;
+                const danas = new Date().toISOString().slice(0, 10);
+                const datum = (!datumStr || datumStr === danas) ? new Date().toISOString() : new Date(datumStr + 'T12:00:00').toISOString();
+                const posao = tip === 'izlaz' ? (document.getElementById('fPosao').value || null) : null;
+
+                korpa.forEach(s => {
+                    if (tip === 'ulaz' && s.cena) this.db.updateMaterijal(s.materijal_id, { nabavna: s.cena });
+                    this.db.addTransakcija({ materijal_id: s.materijal_id, tip, kolicina: s.kolicina, posao_id: posao, datum });
+                });
+                const br = korpa.length;
+                this.korpa[tip] = [];
+                this.toast(`${tip === 'ulaz' ? 'Ulaz' : 'Izlaz'} sačuvan — ${br} ${br === 1 ? 'stavka' : 'stavke/i'} ✓`, 'success');
                 this.render();
             }
 
@@ -846,14 +975,63 @@
                     <div class="list-row">
                         <div>
                             <div class="item-title">${esc(m ? m.naziv : '(obrisan)')}</div>
-                            <div class="item-meta">${fmtDateTime(t.datum)}${p ? ' • 💼 ' + esc(p.naziv) : ''}</div>
+                            <div class="item-meta">${fmtDateTime(t.datum)}${p ? ' • 💼 ' + esc(p.naziv) : ''}${t.napomena ? ' • 📋 ' + esc(t.napomena) : ''}</div>
                         </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:6px;">
                             <div class="item-value ${t.tip === 'izlaz' ? 'red' : ''}">${t.tip === 'ulaz' ? '+' : '−'}${fmt(t.kolicina)} ${esc(m ? m.jedinica : '')}</div>
+                            <button class="icon-btn" onclick="app.formaTrans('${t.id}')">✏️</button>
                             <button class="icon-btn danger" onclick="app.obrisiTrans('${t.id}')">🗑</button>
                         </div>
                     </div>
                 </div>`;
+            }
+
+            formaTrans(id) {
+                const t = this.db.transakcija(id);
+                const m = this.db.materijal(t.materijal_id);
+                const poslovi = this.db.getPoslovi();
+                this.modal(`
+                    <div class="modal-title">${t.tip === 'ulaz' ? '📥' : '📤'} ${esc(m ? m.naziv : '(obrisan)')} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="form-grid2">
+                        <div class="form-group">
+                            <label class="form-label">Količina (${esc(m ? m.jedinica : '')})</label>
+                            <input type="number" id="tKol" inputmode="decimal" step="any" min="0" value="${t.kolicina}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Datum</label>
+                            <input type="date" id="tDatum" value="${t.datum.slice(0, 10)}">
+                        </div>
+                    </div>
+                    ${t.tip === 'izlaz' ? `
+                    <div class="form-group">
+                        <label class="form-label">Posao</label>
+                        <select id="tPosao">
+                            <option value="">— bez posla —</option>
+                            ${poslovi.map(p => `<option value="${p.id}" ${t.posao_id === p.id ? 'selected' : ''}>${esc(p.naziv)}</option>`).join('')}
+                        </select>
+                    </div>` : ''}
+                    <button class="btn" onclick="app.sacuvajTrans('${id}')">Sačuvaj izmene</button>
+                `);
+            }
+
+            sacuvajTrans(id) {
+                const t = this.db.transakcija(id);
+                const kol = num(document.getElementById('tKol').value);
+                if (kol <= 0) return this.toast('Unesi ispravnu količinu', 'error');
+                const datumStr = document.getElementById('tDatum').value;
+                if (t.tip === 'izlaz') {
+                    // stanje bez ove transakcije + nova kolicina ne sme u minus
+                    const stanjeBez = this.db.stanje(t.materijal_id) + t.kolicina;
+                    if (kol > stanjeBez) return this.toast(`Nema dovoljno — bez ove stavke na stanju je ${fmt(stanjeBez)}`, 'error');
+                }
+                const data = { kolicina: kol };
+                if (datumStr && datumStr !== t.datum.slice(0, 10)) data.datum = new Date(datumStr + 'T12:00:00').toISOString();
+                const posaoEl = document.getElementById('tPosao');
+                if (posaoEl) data.posao_id = posaoEl.value || null;
+                this.db.updateTransakcija(id, data);
+                this.toast('Transakcija izmenjena ✓', 'success');
+                this.closeModal();
+                this.render();
             }
 
             obrisiTrans(id) {
@@ -939,29 +1117,32 @@
 
             /* ---------- MATERIJALI ---------- */
             render_materijali() {
-                const f = this.filter.toLowerCase();
-                const mats = this.db.getInventura().filter(m =>
-                    !f || m.naziv.toLowerCase().includes(f) || (m.sku || '').toLowerCase().includes(f));
-
+                const kategorije = this.db.kategorije();
+                if (!this.katF) this.katF = '';
                 return `
                     <button class="btn" onclick="app.formaMaterijal()">➕ Novi materijal</button>
                     <input class="search-input" placeholder="🔍 Pretraži materijale..." value="${esc(this.filter)}"
                         oninput="app.filter=this.value; app.osveziListu('listaMat', app.listaMaterijala())">
+                    ${kategorije.length ? `<div class="chip-row">
+                        <span class="chip ${!this.katF ? 'active' : ''}" onclick="app.katF=''; app.render()">Sve</span>
+                        ${kategorije.map(k => `<span class="chip ${this.katF === k ? 'active' : ''}" onclick="app.katF='${esc(k)}'; app.render()">${esc(k)}</span>`).join('')}
+                    </div>` : ''}
                     <div id="listaMat">${this.listaMaterijala()}</div>
                 `;
             }
 
             listaMaterijala() {
                 const f = this.filter.toLowerCase();
-                const mats = this.db.getInventura().filter(m =>
-                    !f || m.naziv.toLowerCase().includes(f) || (m.sku || '').toLowerCase().includes(f));
+                let mats = this.db.getInventura().filter(m =>
+                    !f || m.naziv.toLowerCase().includes(f) || (m.sku || '').toLowerCase().includes(f) || (m.kategorija || '').toLowerCase().includes(f));
+                if (this.katF) mats = mats.filter(m => m.kategorija === this.katF);
                 if (!mats.length) return '<div class="card"><div class="empty-state"><div class="big">🔧</div>Nema materijala.</div></div>';
                 return `<div class="card">${mats.map(m => `
                     <div class="list-item">
                         <div class="list-row">
                             <div>
                                 <div class="item-title">${esc(m.naziv)} ${m.stanje <= m.minZaliha ? '<span class="badge badge-danger">nisko</span>' : ''}</div>
-                                <div class="item-meta">${esc(m.sku || '')} • nab. ${fmt(m.nabavna)} / prod. ${fmt(m.prodajna)} RSD • min: ${fmt(m.minZaliha)}</div>
+                                <div class="item-meta">${m.kategorija ? '🏷 ' + esc(m.kategorija) + ' • ' : ''}${m.sku ? esc(m.sku) + ' • ' : ''}nab. ${fmt(m.nabavna)} / prod. ${fmt(m.prodajna)} RSD • min: ${fmt(m.minZaliha)}</div>
                                 <div class="item-meta">Na stanju: <strong>${fmt(m.stanje)} ${esc(m.jedinica)}</strong></div>
                             </div>
                             <div style="display:flex; gap:6px;">
@@ -977,7 +1158,8 @@
             }
 
             formaMaterijal(id) {
-                const m = id ? this.db.materijal(id) : { naziv: '', sku: '', jedinica: 'kom', nabavna: '', prodajna: '', minZaliha: 3 };
+                const m = id ? this.db.materijal(id) : { naziv: '', sku: '', jedinica: 'kom', nabavna: '', prodajna: '', minZaliha: 3, kategorija: '' };
+                const kategorije = this.db.kategorije();
                 this.modal(`
                     <div class="modal-title">${id ? 'Izmena materijala' : 'Novi materijal'} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
                     <div class="form-group"><label class="form-label">Naziv *</label><input id="mNaziv" value="${esc(m.naziv)}" placeholder="npr. Kabl NYM 3x2.5"></div>
@@ -986,6 +1168,11 @@
                         <div class="form-group"><label class="form-label">Jedinica</label>
                             <select id="mJed">${['kom', 'm', 'kg', 'l', 'pak', 'rol'].map(j => `<option ${m.jedinica === j ? 'selected' : ''}>${j}</option>`).join('')}</select>
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Kategorija</label>
+                        <input id="mKat" value="${esc(m.kategorija || '')}" placeholder="npr. Kablovi" list="katList">
+                        <datalist id="katList">${kategorije.map(k => `<option value="${esc(k)}">`).join('')}</datalist>
                     </div>
                     <div class="form-grid2">
                         <div class="form-group"><label class="form-label">Nabavna cena (RSD)</label><input id="mNab" type="number" inputmode="decimal" step="any" value="${m.nabavna}"></div>
@@ -1000,6 +1187,7 @@
                 const data = {
                     naziv: document.getElementById('mNaziv').value.trim(),
                     sku: document.getElementById('mSku').value.trim(),
+                    kategorija: document.getElementById('mKat').value.trim(),
                     jedinica: document.getElementById('mJed').value,
                     nabavna: num(document.getElementById('mNab').value),
                     prodajna: num(document.getElementById('mProd').value),
@@ -1039,6 +1227,7 @@
                             </div>
                             <div class="btn-row" style="margin-top:10px;">
                                 <button class="btn btn-ghost btn-small" onclick="app.detaljPosla('${p.id}')">📋 Detalji</button>
+                                <button class="btn btn-ghost btn-small" onclick="app.specifikacija('${p.id}')">🖨</button>
                                 <button class="btn btn-ghost btn-small" onclick="app.formaPosao('${p.id}')">✏️</button>
                                 <button class="btn btn-ghost btn-small" onclick="app.togglePosao('${p.id}')">${p.status === 'aktivan' ? '✅ Završi' : '↩️'}</button>
                                 <button class="btn btn-danger btn-small" onclick="app.obrisiPosao('${p.id}')">🗑</button>
@@ -1109,6 +1298,42 @@
                 `);
             }
 
+            specifikacija(id) {
+                const p = this.db.posao(id);
+                const fin = this.db.posaoFinansije(id);
+                if (!fin.stavke.length && !fin.cenaRada) return this.toast('Posao još nema ni materijal ni cenu rada', 'error');
+
+                const w = window.open('', '_blank');
+                if (!w) return this.toast('Browser je blokirao novi prozor', 'error');
+                w.document.write(`<!DOCTYPE html><html lang="sr"><head><meta charset="UTF-8"><title>Specifikacija — ${esc(p.naziv)}</title>
+                    <style>
+                        body { font-family: -apple-system, 'Segoe UI', sans-serif; color: #1e293b; max-width: 700px; margin: 30px auto; padding: 0 20px; }
+                        h1 { font-size: 22px; margin-bottom: 4px; }
+                        .meta { color: #64748b; font-size: 13px; margin-bottom: 24px; }
+                        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                        th { text-align: left; border-bottom: 2px solid #1e293b; padding: 8px 6px; font-size: 11px; text-transform: uppercase; }
+                        td { padding: 8px 6px; border-bottom: 1px solid #e2e8f0; }
+                        .num { text-align: right; }
+                        tfoot td { font-weight: 700; border-top: 2px solid #1e293b; border-bottom: none; font-size: 15px; }
+                        .footer { margin-top: 40px; color: #94a3b8; font-size: 11px; }
+                        @media print { .no-print { display: none; } body { margin: 0 auto; } }
+                    </style></head><body>
+                    <h1>Specifikacija radova i materijala</h1>
+                    <div class="meta"><strong>${esc(p.naziv)}</strong>${p.lokacija ? ' • ' + esc(p.lokacija) : ''}<br>Datum: ${fmtDate(new Date())}</div>
+                    <table>
+                        <thead><tr><th>Stavka</th><th class="num">Količina</th><th class="num">Cena (RSD)</th><th class="num">Iznos (RSD)</th></tr></thead>
+                        <tbody>
+                            ${fin.stavke.map(s => `<tr><td>${esc(s.naziv)}</td><td class="num">${fmt(s.kolicina)} ${esc(s.jedinica)}</td><td class="num">${s.kolicina ? fmt(s.naplativo / s.kolicina) : '—'}</td><td class="num">${fmt(s.naplativo)}</td></tr>`).join('')}
+                            ${fin.cenaRada ? `<tr><td>Radovi</td><td class="num">—</td><td class="num">—</td><td class="num">${fmt(fin.cenaRada)}</td></tr>` : ''}
+                        </tbody>
+                        <tfoot><tr><td colspan="3">UKUPNO ZA NAPLATU</td><td class="num">${fmt(fin.ukupnoNaplativo)} RSD</td></tr></tfoot>
+                    </table>
+                    <div class="footer">Generisano iz aplikacije Magacin • ${fmtDateTime(new Date())}</div>
+                    <button class="no-print" style="margin-top:20px; padding:10px 20px; font-size:14px; cursor:pointer;" onclick="window.print()">🖨 Štampaj / Sačuvaj kao PDF</button>
+                    </body></html>`);
+                w.document.close();
+            }
+
             /* ---------- STANJE ---------- */
             render_stanje() {
                 return `
@@ -1138,32 +1363,261 @@
             }
 
             /* ---------- ŠOPING LISTA ---------- */
-            render_soping() {
+            sopingStavke() {
+                const rucneRaw = this.db.getSoping();
                 const niska = this.db.getNiskaZaliha();
-                if (!niska.length) return '<div class="card"><div class="empty-state"><div class="big">✅</div>Sve zalihe su iznad minimuma.<br>Ništa ne treba kupovati!</div></div>';
-                let ukupno = 0;
-                const redovi = niska.map(i => {
-                    const preporuka = Math.max(i.minZaliha * 2 - i.stanje, 1);
-                    const cena = preporuka * i.nabavna;
-                    ukupno += cena;
-                    return `<tr>
-                        <td>${esc(i.naziv)}</td>
-                        <td class="num">${fmt(i.stanje)} ${esc(i.jedinica)}</td>
-                        <td class="num"><strong>${fmt(preporuka)}</strong></td>
-                        <td class="num">${fmt(cena)}</td>
-                    </tr>`;
-                }).join('');
+                const rucneMatIds = rucneRaw.map(r => r.materijal_id).filter(Boolean);
+                const auto = niska
+                    .filter(i => !rucneMatIds.includes(i.id))
+                    .map(i => ({
+                        auto: true, materijal_id: i.id, naziv: i.naziv, jedinica: i.jedinica,
+                        kolicina: Math.max(i.minZaliha * 2 - i.stanje, 1), nabavna: i.nabavna, stanje: i.stanje
+                    }));
+                const rucne = rucneRaw.map(r => {
+                    const m = r.materijal_id ? this.db.materijal(r.materijal_id) : null;
+                    return {
+                        auto: false, sopingId: r.id, materijal_id: m ? m.id : null,
+                        naziv: m ? m.naziv : r.naziv, jedinica: m ? m.jedinica : (r.jedinica || ''),
+                        kolicina: r.kolicina || 1, nabavna: m ? m.nabavna : 0, stanje: m ? this.db.stanje(m.id) : null
+                    };
+                });
+                return [...rucne, ...auto];
+            }
+
+            render_soping() {
+                const stavke = this.sopingStavke();
+                const ukupno = stavke.reduce((s, x) => s + x.kolicina * (x.nabavna || 0), 0);
+
+                return `
+                    <div class="btn-row">
+                        <button class="btn" onclick="app.formaSoping()">➕ Dodaj stavku</button>
+                        ${stavke.length ? `<button class="btn btn-ghost" onclick="app.kopirajSoping()">📋 Kopiraj listu</button>` : ''}
+                    </div>
+                    ${stavke.length ? `
+                    <div class="card">
+                        <div class="card-title">Treba kupiti (${stavke.length}) <span style="text-transform:none; color:#64748b; font-weight:600;">~${fmt(ukupno)} RSD</span></div>
+                        ${stavke.map(s => `<div class="list-item">
+                            <div class="list-row">
+                                <div>
+                                    <div class="item-title">${esc(s.naziv)} ${s.auto ? '<span class="badge badge-warn">nisko</span>' : '<span class="badge badge-blue">ručno</span>'}</div>
+                                    <div class="item-meta">Kupi: <strong>${fmt(s.kolicina)} ${esc(s.jedinica)}</strong>${s.stanje != null ? ' • imaš ' + fmt(s.stanje) : ''}${s.nabavna ? ' • ~' + fmt(s.kolicina * s.nabavna) + ' RSD' : ''}</div>
+                                </div>
+                                <div style="display:flex; gap:6px;">
+                                    <button class="btn btn-success btn-small" onclick='app.kupiStavku(${JSON.stringify(JSON.stringify({ materijal_id: s.materijal_id, kolicina: s.kolicina, sopingId: s.sopingId || null }))})'>✓ Kupljeno</button>
+                                    ${!s.auto ? `<button class="icon-btn danger" onclick="app.obrisiSoping('${s.sopingId}')">🗑</button>` : ''}
+                                </div>
+                            </div>
+                        </div>`).join('')}
+                        <p style="font-size:11px; color:#94a3b8; margin-top:10px;">„Nisko" stavke dolaze automatski kad zaliha padne ispod minimuma. „✓ Kupljeno" odmah knjiži ulaz u magacin.</p>
+                    </div>
+                    ` : '<div class="card"><div class="empty-state"><div class="big">✅</div>Sve zalihe su iznad minimuma i nema ručnih stavki.<br>Ništa ne treba kupovati!</div></div>'}
+                `;
+            }
+
+            formaSoping() {
+                const mats = this.db.getMaterijali();
+                this.modal(`
+                    <div class="modal-title">Dodaj na šoping listu <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="form-group">
+                        <label class="form-label">Materijal iz šifarnika</label>
+                        <select id="sMat" onchange="document.getElementById('sNazivWrap').style.display = this.value ? 'none' : 'block'">
+                            <option value="">— nije u šifarniku (slobodan unos) —</option>
+                            ${mats.map(m => `<option value="${m.id}">${esc(m.naziv)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group" id="sNazivWrap">
+                        <label class="form-label">Naziv (slobodan unos)</label>
+                        <input id="sNaziv" placeholder="npr. burgija 8mm, silikon...">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Količina</label>
+                        <input type="number" id="sKol" inputmode="decimal" step="any" min="0" value="1">
+                    </div>
+                    <button class="btn" onclick="app.sacuvajSoping()">Dodaj</button>
+                `);
+            }
+
+            sacuvajSoping() {
+                const mid = document.getElementById('sMat').value || null;
+                const naziv = document.getElementById('sNaziv').value.trim();
+                const kol = num(document.getElementById('sKol').value) || 1;
+                if (!mid && !naziv) return this.toast('Izaberi materijal ili upiši naziv', 'error');
+                this.db.addSoping({ materijal_id: mid, naziv, kolicina: kol });
+                this.toast('Dodato na listu ✓', 'success');
+                this.closeModal();
+                this.render();
+            }
+
+            obrisiSoping(id) {
+                this.db.deleteSoping(id);
+                this.render();
+            }
+
+            kupiStavku(json) {
+                const s = JSON.parse(json);
+                if (!s.materijal_id) {
+                    // slobodna stavka — samo skini sa liste
+                    if (s.sopingId) this.db.deleteSoping(s.sopingId);
+                    this.toast('Skinuto sa liste ✓', 'success');
+                    return this.render();
+                }
+                const m = this.db.materijal(s.materijal_id);
+                this.modal(`
+                    <div class="modal-title">✓ Kupljeno: ${esc(m.naziv)} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="form-grid2">
+                        <div class="form-group">
+                            <label class="form-label">Količina (${esc(m.jedinica)})</label>
+                            <input type="number" id="bKol" inputmode="decimal" step="any" min="0" value="${s.kolicina}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Cena po ${esc(m.jedinica)} (RSD)</label>
+                            <input type="number" id="bCena" inputmode="decimal" step="any" min="0" value="${m.nabavna}">
+                        </div>
+                    </div>
+                    <button class="btn btn-success" onclick="app.potvrdiKupovinu('${s.materijal_id}', '${s.sopingId || ''}')">Proknjiži ulaz</button>
+                `);
+            }
+
+            potvrdiKupovinu(mid, sopingId) {
+                const kol = num(document.getElementById('bKol').value);
+                if (kol <= 0) return this.toast('Unesi ispravnu količinu', 'error');
+                const cena = num(document.getElementById('bCena').value);
+                const m = this.db.materijal(mid);
+                if (cena > 0 && cena !== m.nabavna) this.db.updateMaterijal(mid, { nabavna: cena });
+                this.db.addTransakcija({ materijal_id: mid, tip: 'ulaz', kolicina: kol, posao_id: null });
+                if (sopingId) this.db.deleteSoping(sopingId);
+                this.toast('Ulaz proknjižen ✓', 'success');
+                this.closeModal();
+                this.render();
+            }
+
+            kopirajSoping() {
+                const stavke = this.sopingStavke();
+                const tekst = '🛒 Šoping lista — ' + fmtDate(new Date()) + '\n'
+                    + stavke.map(s => `• ${s.naziv} — ${fmt(s.kolicina)} ${s.jedinica}`.trim()).join('\n');
+                navigator.clipboard.writeText(tekst)
+                    .then(() => this.toast('Lista kopirana — nalepi u poruku ✓', 'success'))
+                    .catch(() => this.toast('Kopiranje nije uspelo', 'error'));
+            }
+
+            /* ---------- POPIS ---------- */
+            render_popis() {
+                const inv = this.db.getInventura();
+                if (!inv.length) return '<div class="card"><div class="empty-state"><div class="big">📋</div>Nema materijala za popis.</div></div>';
+
+                const unetih = Object.keys(this.popisV).length;
+                const f = this.filter.toLowerCase();
+                const prikaz = inv.filter(i => !f || i.naziv.toLowerCase().includes(f));
+
                 return `
                     <div class="card">
-                        <div class="card-title">Treba kupiti (${niska.length})</div>
-                        <div class="table-wrap"><table>
-                            <thead><tr><th>Materijal</th><th class="num">Imaš</th><th class="num">Kupi</th><th class="num">Cena (RSD)</th></tr></thead>
-                            <tbody>${redovi}</tbody>
-                            <tfoot><tr><td colspan="3">PROCENA UKUPNO</td><td class="num">${fmt(ukupno)}</td></tr></tfoot>
-                        </table></div>
-                        <p style="font-size:11px; color:#94a3b8; margin-top:10px;">Preporuka = do duple minimalne zalihe, po nabavnoj ceni. Minimalnu zalihu menjaš na materijalu (✏️).</p>
+                        <div class="card-title">Kako se radi popis</div>
+                        <p style="font-size:13px; color:#64748b;">Prođi kroz policu i za svaki materijal upiši <strong>koliko stvarno imaš</strong>. Preskoči ono što se slaže. Na kraju pritisni „Pregled razlika" — app će ti pokazati rastur i ponuditi da svede stanje.</p>
                     </div>
+                    <input class="search-input" placeholder="🔍 Pretraži..." value="${esc(this.filter)}"
+                        oninput="app.filter=this.value; app.osveziListu('popisLista', app.popisLista())">
+                    <div id="popisLista">${this.popisLista()}</div>
+                    <button class="btn ${unetih ? '' : 'btn-ghost'}" onclick="app.pregledPopisa()">📋 Pregled razlika ${unetih ? `(${unetih})` : ''}</button>
                 `;
+            }
+
+            popisLista() {
+                const f = this.filter.toLowerCase();
+                const inv = this.db.getInventura().filter(i => !f || i.naziv.toLowerCase().includes(f));
+                return `<div class="card">${inv.map(i => {
+                    const uneto = this.popisV[i.id];
+                    const imaUnos = uneto !== undefined && uneto !== '';
+                    const razlika = imaUnos ? num(uneto) - i.stanje : 0;
+                    return `<div class="list-item" style="${imaUnos ? (razlika === 0 ? 'border-color:#bbf7d0; background:#f0fdf4;' : 'border-color:#fecaca; background:#fef2f2;') : ''}">
+                        <div class="list-row">
+                            <div style="flex:1;">
+                                <div class="item-title">${esc(i.naziv)}</div>
+                                <div class="item-meta">Knjižno: <strong>${fmt(i.stanje)} ${esc(i.jedinica)}</strong>${imaUnos && razlika !== 0 ? ` • razlika: <strong style="color:#b91c1c;">${razlika > 0 ? '+' : ''}${fmt(razlika)}</strong>` : ''}${imaUnos && razlika === 0 ? ' • ✓ slaže se' : ''}</div>
+                            </div>
+                            <input type="number" inputmode="decimal" step="any" min="0" placeholder="stvarno"
+                                value="${imaUnos ? uneto : ''}"
+                                style="width:90px; flex:none; text-align:right;"
+                                oninput="app.popisUnos('${i.id}', this.value)">
+                        </div>
+                    </div>`;
+                }).join('')}</div>`;
+            }
+
+            popisUnos(id, val) {
+                if (val === '') delete this.popisV[id];
+                else this.popisV[id] = val;
+                // osvezi samo dugme-brojac bez re-rendera da ne izgubi fokus
+            }
+
+            pregledPopisa() {
+                const razlike = [];
+                let vrednostRazlike = 0;
+                Object.entries(this.popisV).forEach(([id, val]) => {
+                    const m = this.db.materijal(id);
+                    if (!m) return;
+                    const stvarno = num(val);
+                    const knjizno = this.db.stanje(id);
+                    const razlika = stvarno - knjizno;
+                    if (razlika !== 0) {
+                        razlike.push({ m, knjizno, stvarno, razlika });
+                        vrednostRazlike += razlika * m.nabavna;
+                    }
+                });
+
+                if (!Object.keys(this.popisV).length) return this.toast('Nisi uneo nijedno stvarno stanje', 'error');
+
+                if (!razlike.length) {
+                    return this.modal(`
+                        <div class="modal-title">Popis ✓ <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                        <div class="empty-state"><div class="big">🎉</div>Sve uneto se slaže sa knjižnim stanjem.<br>Magacin je čist!</div>
+                        <button class="btn" onclick="app.popisV={}; app.closeModal(); app.render();">Završi popis</button>
+                    `);
+                }
+
+                this.modal(`
+                    <div class="modal-title">Razlike po popisu <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="table-wrap"><table>
+                        <thead><tr><th>Materijal</th><th class="num">Knjižno</th><th class="num">Stvarno</th><th class="num">Razlika</th></tr></thead>
+                        <tbody>${razlike.map(r => `<tr>
+                            <td>${esc(r.m.naziv)}</td>
+                            <td class="num">${fmt(r.knjizno)}</td>
+                            <td class="num">${fmt(r.stvarno)}</td>
+                            <td class="num" style="color:${r.razlika < 0 ? '#b91c1c' : '#15803d'}; font-weight:700;">${r.razlika > 0 ? '+' : ''}${fmt(r.razlika)}</td>
+                        </tr>`).join('')}</tbody>
+                    </table></div>
+                    <p style="margin-top:12px; font-size:13px; color:${vrednostRazlike < 0 ? '#b91c1c' : '#15803d'}; font-weight:600;">
+                        ${vrednostRazlike < 0 ? '📉 Rastur/manjak' : '📈 Višak'}: ${fmt(Math.abs(vrednostRazlike))} RSD (po nabavnoj)
+                    </p>
+                    <p style="font-size:12px; color:#94a3b8; margin: 8px 0 14px;">Knjiženjem se stanje svodi na stvarno — u istoriji ostaje zapis „popis".</p>
+                    <div class="btn-row">
+                        <button class="btn btn-ghost" onclick="app.closeModal()">Nazad</button>
+                        <button class="btn" onclick="app.proknjiziPopis()">✓ Proknjiži korekcije</button>
+                    </div>
+                `);
+            }
+
+            proknjiziPopis() {
+                const datum = new Date().toISOString();
+                let br = 0;
+                Object.entries(this.popisV).forEach(([id, val]) => {
+                    const m = this.db.materijal(id);
+                    if (!m) return;
+                    const razlika = num(val) - this.db.stanje(id);
+                    if (razlika === 0) return;
+                    this.db.addTransakcija({
+                        materijal_id: id,
+                        tip: razlika > 0 ? 'ulaz' : 'izlaz',
+                        kolicina: Math.abs(razlika),
+                        posao_id: null,
+                        datum,
+                        napomena: 'popis'
+                    });
+                    br++;
+                });
+                this.popisV = {};
+                this.toast(`Popis proknjižen — ${br} korekcija ✓`, 'success');
+                this.closeModal();
+                this.render();
             }
 
             /* ---------- IZVEŠTAJI ---------- */
@@ -1206,7 +1660,42 @@
                             </tr>`).join('')}</tbody>
                         </table></div>` : '<div class="empty-state">Nema izlaza vezanih za poslove.<br>Kod izlaza izaberi posao da bi se ovde video profit.</div>'}
                     </div>
+
+                    <div class="card">
+                        <div class="card-title">Po mesecima</div>
+                        ${this.mesecniPregled(trans)}
+                    </div>
                 `;
+            }
+
+            mesecniPregled(trans) {
+                const meseci = {};
+                trans.forEach(t => {
+                    const m = this.db.materijal(t.materijal_id);
+                    const nab = t.nabavna != null ? t.nabavna : (m ? m.nabavna : 0);
+                    const prod = t.prodajna != null ? t.prodajna : (m ? m.prodajna : 0);
+                    const kljuc = t.datum.slice(0, 7);
+                    if (!meseci[kljuc]) meseci[kljuc] = { nabavka: 0, utroseno: 0, naplativo: 0 };
+                    if (t.tip === 'ulaz') meseci[kljuc].nabavka += t.kolicina * nab;
+                    else { meseci[kljuc].utroseno += t.kolicina * nab; meseci[kljuc].naplativo += t.kolicina * prod; }
+                });
+                const kljucevi = Object.keys(meseci).sort().reverse().slice(0, 12);
+                if (!kljucevi.length) return '<div class="empty-state">Nema podataka.</div>';
+                const imena = ['jan', 'feb', 'mar', 'apr', 'maj', 'jun', 'jul', 'avg', 'sep', 'okt', 'nov', 'dec'];
+                return `<div class="table-wrap"><table>
+                    <thead><tr><th>Mesec</th><th class="num">Nabavka</th><th class="num">Utrošeno</th><th class="num">Naplativo</th><th class="num">Profit mat.</th></tr></thead>
+                    <tbody>${kljucevi.map(k => {
+                        const [g, m] = k.split('-');
+                        const x = meseci[k];
+                        return `<tr>
+                            <td>${imena[parseInt(m, 10) - 1]} ${g.slice(2)}.</td>
+                            <td class="num">${fmt(x.nabavka)}</td>
+                            <td class="num">${fmt(x.utroseno)}</td>
+                            <td class="num">${fmt(x.naplativo)}</td>
+                            <td class="num" style="color:${x.naplativo - x.utroseno >= 0 ? '#15803d' : '#b91c1c'}; font-weight:700;">${fmt(x.naplativo - x.utroseno)}</td>
+                        </tr>`;
+                    }).join('')}</tbody>
+                </table></div>`;
             }
 
             /* ---------- PODEŠAVANJA ---------- */
@@ -1226,6 +1715,14 @@
                     </div>
 
                     <div class="card">
+                        <div class="card-title">Izvoz za Excel / knjigovođu</div>
+                        <div class="btn-row">
+                            <button class="btn btn-ghost" onclick="app.izvozCsvIstorija()">📄 CSV istorija</button>
+                            <button class="btn btn-ghost" onclick="app.izvozCsvStanje()">📄 CSV stanje</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
                         <div class="card-title">Instalacija</div>
                         <p style="font-size:13px; color:#64748b;">Na telefonu: otvori meni browsera → <strong>"Dodaj na početni ekran"</strong> / <strong>"Add to Home Screen"</strong> — aplikacija radi i bez interneta.</p>
                     </div>
@@ -1237,14 +1734,59 @@
                 `;
             }
 
-            izvoz() {
-                const blob = new Blob([this.db.exportAll()], { type: 'application/json' });
+            preuzmiFajl(ime, sadrzaj, mime) {
+                const blob = new Blob([sadrzaj], { type: mime });
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
-                a.download = 'magacin-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+                a.download = ime;
                 a.click();
                 URL.revokeObjectURL(a.href);
+            }
+
+            izvoz() {
+                this.preuzmiFajl('magacin-backup-' + new Date().toISOString().slice(0, 10) + '.json', this.db.exportAll(), 'application/json');
+                localStorage.setItem('magacin_lastBackup', new Date().toISOString());
                 this.toast('Backup preuzet ✓', 'success');
+            }
+
+            csvRed(polja) {
+                return polja.map(p => {
+                    const s = String(p ?? '');
+                    return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+                }).join(';');
+            }
+
+            izvozCsvIstorija() {
+                const redovi = [this.csvRed(['Datum', 'Tip', 'Materijal', 'Kolicina', 'Jedinica', 'Posao', 'Nabavna', 'Prodajna', 'Napomena'])];
+                this.db.getTransakcije().forEach(t => {
+                    const m = this.db.materijal(t.materijal_id);
+                    const p = t.posao_id ? this.db.posao(t.posao_id) : null;
+                    redovi.push(this.csvRed([
+                        fmtDate(t.datum), t.tip, m ? m.naziv : '(obrisan)',
+                        String(t.kolicina).replace('.', ','), m ? m.jedinica : '',
+                        p ? p.naziv : '',
+                        String(t.nabavna != null ? t.nabavna : (m ? m.nabavna : 0)).replace('.', ','),
+                        String(t.prodajna != null ? t.prodajna : (m ? m.prodajna : 0)).replace('.', ','),
+                        t.napomena || ''
+                    ]));
+                });
+                this.preuzmiFajl('magacin-istorija-' + new Date().toISOString().slice(0, 10) + '.csv', '﻿' + redovi.join('\r\n'), 'text/csv;charset=utf-8');
+                this.toast('CSV istorija preuzeta ✓', 'success');
+            }
+
+            izvozCsvStanje() {
+                const redovi = [this.csvRed(['Materijal', 'SKU', 'Kategorija', 'Stanje', 'Jedinica', 'Nabavna', 'Prodajna', 'Vrednost nabavna', 'Vrednost prodajna'])];
+                this.db.getInventura().forEach(i => {
+                    redovi.push(this.csvRed([
+                        i.naziv, i.sku || '', i.kategorija || '',
+                        String(i.stanje).replace('.', ','), i.jedinica,
+                        String(i.nabavna).replace('.', ','), String(i.prodajna).replace('.', ','),
+                        String(Math.round(i.vredNabavna * 100) / 100).replace('.', ','),
+                        String(Math.round(i.vredProdajna * 100) / 100).replace('.', ',')
+                    ]));
+                });
+                this.preuzmiFajl('magacin-stanje-' + new Date().toISOString().slice(0, 10) + '.csv', '﻿' + redovi.join('\r\n'), 'text/csv;charset=utf-8');
+                this.toast('CSV stanje preuzeto ✓', 'success');
             }
 
             uvoz(input) {
