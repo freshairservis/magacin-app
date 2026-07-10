@@ -58,78 +58,92 @@
         .header-title { font-size: 17px; font-weight: 700; color: #3b82f6; }
         .header-sub { font-size: 11px; color: #64748b; }
 
-        /* ---------- DRAWER ---------- */
-        .drawer-overlay {
-            display: none;
-            position: absolute;
-            inset: 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 200;
-        }
-        .drawer-overlay.active { display: block; }
-
-        .drawer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 280px;
-            height: 100%;
+        /* ---------- TAB BAR ---------- */
+        .tabbar {
+            flex-shrink: 0;
             background: #ffffff;
-            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
-            z-index: 300;
-            transform: translateX(-105%);
-            transition: transform 0.28s ease;
+            border-top: 1px solid #e2e8f0;
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+            z-index: 150;
+        }
+        .tab {
             display: flex;
             flex-direction: column;
-            border-right: 1px solid #e2e8f0;
-        }
-        .drawer.active { transform: translateX(0); }
-
-        .drawer-header {
-            padding: 20px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 2px;
+            padding: 6px 2px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 20px;
+            color: #94a3b8;
+            border-radius: 10px;
+            position: relative;
         }
-        .drawer-title { font-size: 16px; font-weight: 700; color: #3b82f6; }
+        .tab-label { font-size: 10px; font-weight: 600; color: #94a3b8; }
+        .tab.active .tab-label { color: #3b82f6; }
+        .tab.active { color: #3b82f6; }
+        .tab-fab {
+            width: 52px;
+            height: 52px;
+            margin: -22px auto 0;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: #ffffff;
+            font-size: 26px;
+            border: 4px solid #f8fafc;
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tab-fab:active { transform: scale(0.94); }
+        .tab-dot {
+            position: absolute;
+            top: 2px;
+            right: 50%;
+            margin-right: -18px;
+            background: #ef4444;
+            color: #fff;
+            font-size: 9px;
+            font-weight: 700;
+            min-width: 15px;
+            height: 15px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 3px;
+        }
+
         .drawer-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #64748b; }
 
-        .drawer-menu { flex: 1; overflow-y: auto; padding: 8px; }
-
-        .drawer-item {
-            padding: 13px 16px;
-            margin-bottom: 3px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 14px;
-            color: #64748b;
-            transition: all 0.15s;
-            border-left: 3px solid transparent;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .segmenti {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: 1fr;
+            gap: 4px;
+            background: #e2e8f0;
+            border-radius: 12px;
+            padding: 4px;
         }
-        .drawer-item:hover { background: #f1f5f9; color: #3b82f6; }
-        .drawer-item.active {
-            background: #eff6ff;
-            border-left-color: #3b82f6;
-            color: #3b82f6;
+        .segment {
+            text-align: center;
+            padding: 8px 4px;
+            border-radius: 9px;
+            font-size: 12px;
             font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            white-space: nowrap;
         }
-        .drawer-badge {
-            background: #fee2e2;
-            color: #991b1b;
-            font-size: 11px;
-            font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 10px;
-        }
-        .drawer-footer {
-            padding: 12px 16px;
-            border-top: 1px solid #e2e8f0;
-            font-size: 11px;
-            color: #94a3b8;
+        .segment.active {
+            background: #ffffff;
+            color: #3b82f6;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
         }
 
         /* ---------- CONTENT ---------- */
@@ -452,20 +466,22 @@
     <div id="root">
         <div class="header">
             <div class="header-left">
-                <button class="hamburger" onclick="app.toggleDrawer()">☰</button>
                 <div>
                     <div class="header-title" id="headerTitle">📦 Magacin</div>
                     <div class="header-sub" id="headerSub"></div>
                 </div>
             </div>
-            <button class="hamburger" onclick="app.globalnaPretraga()">🔍</button>
+            <div style="display:flex; gap:2px;">
+                <button class="hamburger" onclick="app.globalnaPretraga()">🔍</button>
+                <button class="hamburger" onclick="app.idiNa('podesavanja')">⚙️</button>
+            </div>
         </div>
 
         <div id="pinBar"></div>
-        <div class="drawer-overlay" id="drawerOverlay" onclick="app.toggleDrawer()"></div>
-        <div class="drawer" id="drawer"></div>
 
         <div class="content" id="content"></div>
+
+        <div class="tabbar" id="tabbar"></div>
 
         <div class="modal-overlay" id="modalOverlay">
             <div class="modal" id="modalBox"></div>
@@ -679,25 +695,30 @@
 
         /* ================= APP ================= */
         const PAGES = {
-            pocetna:    { naslov: '📦 Magacin',      sub: 'Pregled' },
-            ulazi:      { naslov: '📥 Ulazi',        sub: 'Nabavka materijala' },
-            izlazi:     { naslov: '📤 Izlazi',       sub: 'Potrošnja na poslu' },
-            materijali: { naslov: '🔧 Materijali',   sub: 'Šifarnik artikala' },
+            pocetna:    { naslov: '🏠 Početna',      sub: 'Pregled dana' },
+            magacin:    { naslov: '📦 Magacin',      sub: 'Stanje, šoping, popis, artikli' },
+            pregled:    { naslov: '📈 Pregled',      sub: 'Dnevnik i izveštaji' },
+            ulazi:      { naslov: '📥 Ulaz',         sub: 'Nabavka materijala' },
+            izlazi:     { naslov: '📤 Izlaz',        sub: 'Potrošnja na poslu' },
             poslovi:    { naslov: '💼 Poslovi',      sub: 'Projekti i troškovi' },
-            stanje:     { naslov: '📊 Stanje',       sub: 'Trenutne zalihe' },
-            istorija:   { naslov: '🕘 Dnevnik',      sub: 'Šta je rađeno, po danima' },
-            soping:     { naslov: '🛒 Šoping lista', sub: 'Šta treba kupiti' },
-            popis:      { naslov: '📋 Popis',        sub: 'Svođenje stanja magacina' },
             kompleti:   { naslov: '🧰 Kompleti',     sub: 'Šabloni materijala' },
-            izvestaji:  { naslov: '📈 Izveštaji',    sub: 'Finansijski pregled' },
             podesavanja:{ naslov: '⚙️ Podešavanja',  sub: 'Podaci i backup' }
+        };
+
+        // stare rute -> nova mesta (da svi postojeci linkovi rade)
+        const RUTE = {
+            stanje:     { stranica: 'magacin', tab: 'stanje' },
+            soping:     { stranica: 'magacin', tab: 'soping' },
+            popis:      { stranica: 'magacin', tab: 'popis' },
+            materijali: { stranica: 'magacin', tab: 'artikli' },
+            istorija:   { stranica: 'pregled', tab: 'dnevnik' },
+            izvestaji:  { stranica: 'pregled', tab: 'izvestaji' }
         };
 
         class MagacinApp {
             constructor() {
                 this.db = new DataManager();
                 this.stranica = 'pocetna';
-                this.drawerOpen = false;
                 this.filter = '';
                 this.korpa = { ulaz: [], izlaz: [] };
                 this.popisV = {};
@@ -734,18 +755,19 @@
                 `);
             }
 
-            toggleDrawer() {
-                this.drawerOpen = !this.drawerOpen;
-                document.getElementById('drawer').classList.toggle('active', this.drawerOpen);
-                document.getElementById('drawerOverlay').classList.toggle('active', this.drawerOpen);
-            }
-
             idiNa(stranica) {
-                this.stranica = stranica;
+                const ruta = RUTE[stranica];
+                if (ruta) {
+                    this.stranica = ruta.stranica;
+                    if (ruta.stranica === 'magacin') this.magacinTab = ruta.tab;
+                    else this.pregledTab = ruta.tab;
+                } else {
+                    this.stranica = stranica;
+                }
                 this.filter = '';
                 this.istF = null;
                 this.katF = '';
-                if (this.drawerOpen) this.toggleDrawer();
+                this.closeModal();
                 this.render();
             }
 
@@ -791,39 +813,69 @@
                 document.getElementById('pinBar').innerHTML = pin
                     ? `<div class="pin-bar"><span onclick="app.detaljPosla('${pin.id}')" style="cursor:pointer;">📌 Radiš na: ${esc(pin.naziv)}</span><button onclick="app.pinuj('${pin.id}')">✕ skini</button></div>`
                     : '';
-                this.renderDrawer();
+                this.renderTabbar();
 
                 const content = document.getElementById('content');
                 content.innerHTML = this['render_' + this.stranica]();
                 content.scrollTop = 0;
             }
 
-            renderDrawer() {
+            renderTabbar() {
                 const niska = this.db.getNiskaZaliha().length;
-                const item = (id, ikona, tekst, badge) => `
-                    <div class="drawer-item ${this.stranica === id ? 'active' : ''}" onclick="app.idiNa('${id}')">
-                        <span>${ikona} ${tekst}</span>${badge ? `<span class="drawer-badge">${badge}</span>` : ''}
-                    </div>`;
-                document.getElementById('drawer').innerHTML = `
-                    <div class="drawer-header">
-                        <div class="drawer-title">📦 MAGACIN</div>
-                        <button class="drawer-close" onclick="app.toggleDrawer()">✕</button>
+                const aktivan = { pocetna: 'pocetna', magacin: 'magacin', poslovi: 'poslovi', pregled: 'pregled', ulazi: 'unos', izlazi: 'unos', kompleti: 'unos' }[this.stranica] || '';
+                const tab = (id, ikona, tekst, badge) => `
+                    <button class="tab ${aktivan === id ? 'active' : ''}" onclick="app.idiNa('${id}')">
+                        ${ikona}<span class="tab-label">${tekst}</span>${badge ? `<span class="tab-dot">${badge}</span>` : ''}
+                    </button>`;
+                document.getElementById('tabbar').innerHTML = `
+                    ${tab('pocetna', '🏠', 'Početna')}
+                    ${tab('magacin', '📦', 'Magacin', niska || '')}
+                    <div><button class="tab-fab" onclick="app.unosSheet()">➕</button></div>
+                    ${tab('poslovi', '💼', 'Poslovi')}
+                    ${tab('pregled', '📈', 'Pregled')}
+                `;
+            }
+
+            unosSheet() {
+                this.modal(`
+                    <div class="modal-title">Šta beležimo? <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <button class="btn" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.idiNa('ulazi')">📥 Ulaz — nabavio sam materijal</button>
+                    <button class="btn btn-success" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.idiNa('izlazi')">📤 Izlaz — ugradio / potrošio</button>
+                    <button class="btn btn-ghost" style="padding:14px;" onclick="app.idiNa('kompleti')">🧰 Kompleti — šabloni materijala</button>
+                `);
+            }
+
+            /* ---------- GRUPNE STRANICE ---------- */
+            render_magacin() {
+                if (!this.magacinTab) this.magacinTab = 'stanje';
+                const seg = (id, tekst) => `<div class="segment ${this.magacinTab === id ? 'active' : ''}" onclick="app.magacinTab='${id}'; app.filter=''; app.katF=''; app.render()">${tekst}</div>`;
+                const sadrzaj = {
+                    stanje: () => this.render_stanje(),
+                    soping: () => this.render_soping(),
+                    popis: () => this.render_popis(),
+                    artikli: () => this.render_materijali()
+                }[this.magacinTab]();
+                const niska = this.db.getNiskaZaliha().length;
+                return `
+                    <div class="segmenti">
+                        ${seg('stanje', '📊 Stanje')}
+                        ${seg('soping', `🛒 Šoping${niska ? ' (' + niska + ')' : ''}`)}
+                        ${seg('popis', '📋 Popis')}
+                        ${seg('artikli', '🔧 Artikli')}
                     </div>
-                    <div class="drawer-menu">
-                        ${item('pocetna', '🏠', 'Početna')}
-                        ${item('ulazi', '📥', 'Ulazi')}
-                        ${item('izlazi', '📤', 'Izlazi')}
-                        ${item('stanje', '📊', 'Stanje')}
-                        ${item('istorija', '🕘', 'Dnevnik')}
-                        ${item('soping', '🛒', 'Šoping lista', niska || '')}
-                        ${item('popis', '📋', 'Popis')}
-                        ${item('kompleti', '🧰', 'Kompleti')}
-                        ${item('materijali', '🔧', 'Materijali')}
-                        ${item('poslovi', '💼', 'Poslovi')}
-                        ${item('izvestaji', '📈', 'Izveštaji')}
-                        ${item('podesavanja', '⚙️', 'Podešavanja')}
+                    ${sadrzaj}
+                `;
+            }
+
+            render_pregled() {
+                if (!this.pregledTab) this.pregledTab = 'dnevnik';
+                const seg = (id, tekst) => `<div class="segment ${this.pregledTab === id ? 'active' : ''}" onclick="app.pregledTab='${id}'; app.filter=''; app.istF=null; app.render()">${tekst}</div>`;
+                return `
+                    <div class="segmenti">
+                        ${seg('dnevnik', '🕘 Dnevnik')}
+                        ${seg('izvestaji', '📈 Izveštaji')}
                     </div>
-                    <div class="drawer-footer">Podaci se čuvaju na ovom uređaju.<br>Backup: Podešavanja → Izvezi.</div>
+                    ${this.pregledTab === 'dnevnik' ? this.render_istorija() : this.render_izvestaji()}
                 `;
             }
 
