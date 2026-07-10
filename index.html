@@ -945,77 +945,46 @@
 
             /* ---------- POČETNA ---------- */
             render_pocetna() {
-                const inv = this.db.getInventura();
-                const trans = this.db.getTransakcije();
-                const niska = this.db.getNiskaZaliha();
                 const aktivni = this.db.getPoslovi().filter(p => p.status === 'aktivan');
+                const pinHint = !this.getPin() && aktivni.length
+                    ? `<div class="card" style="padding:12px 16px;"><div class="item-meta" style="cursor:pointer;" onclick="app.idiNa('poslovi')">📌 Pinuj posao na kom radiš — izlazi će sami ići na njega. <span style="color:#3b82f6; font-weight:600;">Otvori Poslove →</span></div></div>`
+                    : '';
+                return `
+                    ${this.pinWidget()}
+                    ${pinHint}
+                    ${this.danasKartica()}
+                    ${this.savetnik()}
+                `;
+            }
 
-                const vredNab = inv.reduce((s, i) => s + Math.max(0, i.vredNabavna), 0);
-                const vredProd = inv.reduce((s, i) => s + Math.max(0, i.vredProdajna), 0);
-
-                const mesec = new Date().toISOString().slice(0, 7);
-                let mesUlaz = 0, mesIzlaz = 0, mesBr = 0;
-                trans.forEach(t => {
-                    if (t.datum.slice(0, 7) !== mesec) return;
-                    mesBr++;
+            danasKartica() {
+                const danas = new Date().toISOString().slice(0, 10);
+                const ts = this.db.getTransakcije().filter(t => t.datum.slice(0, 10) === danas);
+                if (!ts.length) {
+                    return `<div class="card">
+                        <div class="card-title">📅 Danas — ${fmtDate(new Date())}</div>
+                        <div class="empty-state"><div class="big">📭</div>Još ništa nije zabeleženo danas.<br>Kad nešto ugradiš ili nabaviš — ➕ dole.</div>
+                    </div>`;
+                }
+                let ugradjeno = 0, nabavljeno = 0;
+                const posloviDana = new Set();
+                ts.forEach(t => {
                     const m = this.db.materijal(t.materijal_id);
                     const nab = t.nabavna != null ? t.nabavna : (m ? m.nabavna : 0);
                     const prod = t.prodajna != null ? t.prodajna : (m ? m.prodajna : 0);
-                    if (t.tip === 'ulaz') mesUlaz += t.kolicina * nab;
-                    else mesIzlaz += t.kolicina * prod;
+                    if (t.tip === 'ulaz') nabavljeno += t.kolicina * nab;
+                    else ugradjeno += t.kolicina * prod;
+                    if (t.posao_id) { const p = this.db.posao(t.posao_id); if (p) posloviDana.add(p.naziv); }
                 });
-
-                const poslednje = trans.slice(0, 6).map(t => {
-                    const m = this.db.materijal(t.materijal_id);
-                    const p = t.posao_id ? this.db.posao(t.posao_id) : null;
-                    return `<div class="list-item">
-                        <div class="list-row">
-                            <div>
-                                <div class="item-title">${t.tip === 'ulaz' ? '📥' : '📤'} ${esc(m ? m.naziv : '(obrisan)')}</div>
-                                <div class="item-meta">${fmtDateTime(t.datum)}${p ? ' • ' + esc(p.naziv) : ''}</div>
-                            </div>
-                            <div class="item-value ${t.tip === 'izlaz' ? 'red' : ''}">${t.tip === 'ulaz' ? '+' : '−'}${fmt(t.kolicina)} ${esc(m ? m.jedinica : '')}</div>
-                        </div>
-                    </div>`;
-                }).join('');
-
-                return `
-                    <div class="stats-grid">
-                        <div class="stat-box"><div class="stat-value">${fmt(vredNab)}</div><div class="stat-label">Vrednost (nabavna) RSD</div></div>
-                        <div class="stat-box green"><div class="stat-value">${fmt(vredProd)}</div><div class="stat-label">Vrednost (prodajna) RSD</div></div>
-                        <div class="stat-box"><div class="stat-value">${inv.length}</div><div class="stat-label">Materijala</div></div>
-                        <div class="stat-box"><div class="stat-value">${aktivni.length}</div><div class="stat-label">Aktivnih poslova</div></div>
+                return `<div class="card">
+                    <div class="card-title">📅 Danas — ${fmtDate(new Date())}
+                        <span style="text-transform:none; font-weight:600; color:#64748b;">${ugradjeno ? '📤 ' + fmt(ugradjeno) : ''}${ugradjeno && nabavljeno ? ' • ' : ''}${nabavljeno ? '📥 ' + fmt(nabavljeno) : ''} RSD</span>
                     </div>
-
-                    ${niska.length ? `<div class="warning-banner" onclick="app.idiNa('soping')">⚠️ <strong>${niska.length} ${niska.length === 1 ? 'materijal je' : 'materijala je'} na niskoj zalihi.</strong><br>Dodirni za šoping listu →</div>` : ''}
-
-                    ${this.backupUpozorenje(trans.length)}
-
-                    ${this.pinWidget()}
-
-                    ${this.savetnik()}
-
-                    <div class="card">
-                        <div class="card-title">Brze akcije</div>
-                        <div class="btn-row">
-                            <button class="btn" onclick="app.idiNa('ulazi')">📥 Novi ulaz</button>
-                            <button class="btn btn-success" onclick="app.idiNa('izlazi')">📤 Novi izlaz</button>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-title">Ovaj mesec <span style="color:#94a3b8; font-weight:400; text-transform:none;">${mesBr} transakcija</span></div>
-                        <div class="stats-grid">
-                            <div class="stat-box"><div class="stat-value">${fmt(mesUlaz)}</div><div class="stat-label">Nabavljeno RSD</div></div>
-                            <div class="stat-box green"><div class="stat-value">${fmt(mesIzlaz)}</div><div class="stat-label">Ugrađeno (prodajna) RSD</div></div>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-title">Poslednje transakcije</div>
-                        ${poslednje || '<div class="empty-state"><div class="big">📭</div>Još nema transakcija.<br>Kreni od ulaza materijala.</div>'}
-                    </div>
-                `;
+                    ${posloviDana.size ? `<div class="item-meta" style="margin-bottom:8px;">💼 ${[...posloviDana].map(esc).join(' • ')}</div>` : ''}
+                    ${ts.slice(0, 8).map(t => this.transRed(t)).join('')}
+                    ${ts.length > 8 ? `<div class="item-meta" style="text-align:center; margin-top:4px;">… i još ${ts.length - 8}</div>` : ''}
+                    <button class="btn btn-ghost btn-small" style="margin-top:10px;" onclick="app.idiNa('istorija')">🕘 Ceo dnevnik →</button>
+                </div>`;
             }
 
             /* ---------- WIDGET PINOVANOG POSLA ---------- */
@@ -1057,6 +1026,24 @@
                 const saveti = [];
                 const inv = this.db.getInventura();
 
+                // 0. niska zaliha (najhitnije)
+                const niska = this.db.getNiskaZaliha();
+                if (niska.length) saveti.push({
+                    t: `⚠️ <strong>${niska.length} ${niska.length === 1 ? 'materijal je' : 'materijala je'} ispod minimuma</strong> — pogledaj šoping listu.`,
+                    go: 'soping'
+                });
+
+                // 0b. backup
+                const brTrans = this.db.get('transakcije').length;
+                if (brTrans >= 5) {
+                    const zadnji = localStorage.getItem('magacin_lastBackup');
+                    const dana = zadnji ? Math.floor((Date.now() - new Date(zadnji)) / 86400000) : null;
+                    if (!zadnji || dana >= 7) saveti.push({
+                        t: `💾 ${zadnji ? `Backup je star <strong>${dana} dana</strong>` : '<strong>Nikad nisi izvezao backup</strong>'} — podaci žive samo u ovom browseru.`,
+                        go: 'podesavanja'
+                    });
+                }
+
                 // 1. predikcija: za koliko dana nestaje
                 const predikcije = inv
                     .filter(i => i.stanje > 0)
@@ -1067,9 +1054,10 @@
                     .filter(x => x.dana <= 14)
                     .sort((a, b) => a.dana - b.dana)
                     .slice(0, 3);
-                predikcije.forEach(x => saveti.push(
-                    `⏳ <strong>${esc(x.i.naziv)}</strong> — po tvojoj potrošnji, na stanju za još <strong>~${x.dana} ${x.dana === 1 ? 'dan' : 'dana'}</strong>.`
-                ));
+                predikcije.forEach(x => saveti.push({
+                    t: `⏳ <strong>${esc(x.i.naziv)}</strong> — po tvojoj potrošnji, na stanju za još <strong>~${x.dana} ${x.dana === 1 ? 'dan' : 'dana'}</strong>.`,
+                    go: 'soping'
+                }));
 
                 // 2. zaboravljeni aktivni poslovi
                 const sada = Date.now();
@@ -1077,7 +1065,7 @@
                     const vezane = this.db.get('transakcije').filter(t => t.posao_id === p.id);
                     const zadnja = vezane.length ? Math.max(...vezane.map(t => new Date(t.datum).getTime())) : new Date(p.datum || 0).getTime();
                     const dana = Math.floor((sada - zadnja) / 86400000);
-                    if (dana >= 30) saveti.push(`💼 Posao <strong>${esc(p.naziv)}</strong> nema aktivnosti ${dana} dana — završiti ili nastaviti?`);
+                    if (dana >= 30) saveti.push({ t: `💼 Posao <strong>${esc(p.naziv)}</strong> nema aktivnosti ${dana} dana — završiti ili nastaviti?`, go: 'poslovi' });
                 });
 
                 // 3. mrtvi kapital
@@ -1090,7 +1078,7 @@
                 });
                 if (mrtvi.length >= 2) {
                     const vrednost = mrtvi.reduce((s, i) => s + i.vredNabavna, 0);
-                    saveti.push(`🧊 <strong>${mrtvi.length} materijala</strong> ne koristiš 3+ meseca, a drže <strong>${fmt(vrednost)} RSD</strong> — mrtvi kapital.`);
+                    saveti.push({ t: `🧊 <strong>${mrtvi.length} materijala</strong> ne koristiš 3+ meseca, a drže <strong>${fmt(vrednost)} RSD</strong> — mrtvi kapital.`, go: 'stanje' });
                 }
 
                 // 4. predlog minimuma
@@ -1098,22 +1086,12 @@
                     const mes = this.potrosnjaMesecno(i.id);
                     return mes > 0 && i.minZaliha < mes / 4;
                 });
-                if (zaMinimum.length >= 3) saveti.push(`🎯 Minimalne zalihe za <strong>${zaMinimum.length} materijala</strong> su premale za tvoju potrošnju — <span style="text-decoration:underline;" onclick="event.stopPropagation(); app.predloziMinimume()">predloži nove</span>.`);
+                if (zaMinimum.length >= 3) saveti.push({ t: `🎯 Minimalne zalihe za <strong>${zaMinimum.length} materijala</strong> su premale za tvoju potrošnju — <span style="text-decoration:underline;" onclick="event.stopPropagation(); app.predloziMinimume()">predloži nove</span>.`, go: null });
 
                 if (!saveti.length) return '';
                 return `<div class="card" style="border-color:#c7d2fe; background:linear-gradient(135deg,#ffffff 0%,#eef2ff 100%);">
                     <div class="card-title" style="color:#4f46e5;">🤖 Savetnik</div>
-                    ${saveti.slice(0, 5).map(s => `<div class="list-item" style="background:#ffffff;"><div class="item-meta" style="color:#334155; line-height:1.5;">${s}</div></div>`).join('')}
-                </div>`;
-            }
-
-            backupUpozorenje(brTrans) {
-                if (brTrans < 5) return '';
-                const zadnji = localStorage.getItem('magacin_lastBackup');
-                const dana = zadnji ? Math.floor((Date.now() - new Date(zadnji)) / 86400000) : null;
-                if (zadnji && dana < 7) return '';
-                return `<div class="warning-banner" style="background:linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%); border-color:#fde68a; color:#92400e;" onclick="app.idiNa('podesavanja')">
-                    💾 ${zadnji ? `Backup je star <strong>${dana} dana</strong>.` : '<strong>Nikad nisi izvezao backup!</strong>'} Podaci žive samo u ovom browseru.<br>Dodirni za izvoz →
+                    ${saveti.slice(0, 6).map(s => `<div class="list-item" style="background:#ffffff; ${s.go ? 'cursor:pointer;' : ''}" ${s.go ? `onclick="app.idiNa('${s.go}')"` : ''}><div class="item-meta" style="color:#334155; line-height:1.5;">${s.t}${s.go ? ' <span style="color:#3b82f6;">→</span>' : ''}</div></div>`).join('')}
                 </div>`;
             }
 
