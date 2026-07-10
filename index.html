@@ -528,7 +528,14 @@
                     stavke[key].trosak += t.kolicina * nab;
                     stavke[key].naplativo += t.kolicina * prod;
                 });
-                return { trosak, naplativo, profit: naplativo - trosak, stavke: Object.values(stavke) };
+                const p = this.posao(posao_id);
+                const cenaRada = p && p.cenaRada ? num(p.cenaRada) : 0;
+                return {
+                    trosak, naplativo, cenaRada,
+                    ukupnoNaplativo: naplativo + cenaRada,
+                    profit: naplativo + cenaRada - trosak,
+                    stavke: Object.values(stavke)
+                };
             }
 
             exportAll() {
@@ -567,6 +574,7 @@
             materijali: { naslov: '🔧 Materijali',   sub: 'Šifarnik artikala' },
             poslovi:    { naslov: '💼 Poslovi',      sub: 'Projekti i troškovi' },
             stanje:     { naslov: '📊 Stanje',       sub: 'Trenutne zalihe' },
+            istorija:   { naslov: '🕘 Istorija',     sub: 'Sve transakcije' },
             soping:     { naslov: '🛒 Šoping lista', sub: 'Šta treba kupiti' },
             izvestaji:  { naslov: '📈 Izveštaji',    sub: 'Finansijski pregled' },
             podesavanja:{ naslov: '⚙️ Podešavanja',  sub: 'Podaci i backup' }
@@ -620,6 +628,7 @@
             idiNa(stranica) {
                 this.stranica = stranica;
                 this.filter = '';
+                this.istF = null;
                 if (this.drawerOpen) this.toggleDrawer();
                 this.render();
             }
@@ -652,6 +661,7 @@
                         ${item('ulazi', '📥', 'Ulazi')}
                         ${item('izlazi', '📤', 'Izlazi')}
                         ${item('stanje', '📊', 'Stanje')}
+                        ${item('istorija', '🕘', 'Istorija')}
                         ${item('soping', '🛒', 'Šoping lista', niska || '')}
                         ${item('materijali', '🔧', 'Materijali')}
                         ${item('poslovi', '💼', 'Poslovi')}
@@ -671,6 +681,18 @@
 
                 const vredNab = inv.reduce((s, i) => s + Math.max(0, i.vredNabavna), 0);
                 const vredProd = inv.reduce((s, i) => s + Math.max(0, i.vredProdajna), 0);
+
+                const mesec = new Date().toISOString().slice(0, 7);
+                let mesUlaz = 0, mesIzlaz = 0, mesBr = 0;
+                trans.forEach(t => {
+                    if (t.datum.slice(0, 7) !== mesec) return;
+                    mesBr++;
+                    const m = this.db.materijal(t.materijal_id);
+                    const nab = t.nabavna != null ? t.nabavna : (m ? m.nabavna : 0);
+                    const prod = t.prodajna != null ? t.prodajna : (m ? m.prodajna : 0);
+                    if (t.tip === 'ulaz') mesUlaz += t.kolicina * nab;
+                    else mesIzlaz += t.kolicina * prod;
+                });
 
                 const poslednje = trans.slice(0, 6).map(t => {
                     const m = this.db.materijal(t.materijal_id);
@@ -705,6 +727,14 @@
                     </div>
 
                     <div class="card">
+                        <div class="card-title">Ovaj mesec <span style="color:#94a3b8; font-weight:400; text-transform:none;">${mesBr} transakcija</span></div>
+                        <div class="stats-grid">
+                            <div class="stat-box"><div class="stat-value">${fmt(mesUlaz)}</div><div class="stat-label">Nabavljeno RSD</div></div>
+                            <div class="stat-box green"><div class="stat-value">${fmt(mesIzlaz)}</div><div class="stat-label">Ugrađeno (prodajna) RSD</div></div>
+                        </div>
+                    </div>
+
+                    <div class="card">
                         <div class="card-title">Poslednje transakcije</div>
                         ${poslednje || '<div class="empty-state"><div class="big">📭</div>Još nema transakcija.<br>Kreni od ulaza materijala.</div>'}
                     </div>
@@ -724,9 +754,15 @@
                             <label class="form-label">Materijal</label>
                             <select id="fMat">${mats.map(m => `<option value="${m.id}">${esc(m.naziv)} (${esc(m.jedinica)})</option>`).join('')}</select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Količina</label>
-                            <input type="number" id="fKol" inputmode="decimal" placeholder="0" min="0" step="any">
+                        <div class="form-grid2">
+                            <div class="form-group">
+                                <label class="form-label">Količina</label>
+                                <input type="number" id="fKol" inputmode="decimal" placeholder="0" min="0" step="any">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Nova nab. cena (opciono)</label>
+                                <input type="number" id="fCena" inputmode="decimal" placeholder="ostaje ista" min="0" step="any">
+                            </div>
                         </div>
                         <button class="btn" onclick="app.sacuvajUlaz()">Sačuvaj ulaz</button>
                         ` : `<div class="empty-state"><div class="big">🔧</div>Prvo dodaj materijale u šifarnik.<br><br><button class="btn btn-small" onclick="app.idiNa('materijali')">Idi na Materijale</button></div>`}
@@ -743,6 +779,8 @@
                 const mid = document.getElementById('fMat').value;
                 const kol = num(document.getElementById('fKol').value);
                 if (!mid || kol <= 0) return this.toast('Unesi ispravnu količinu', 'error');
+                const novaCena = num(document.getElementById('fCena').value);
+                if (novaCena > 0) this.db.updateMaterijal(mid, { nabavna: novaCena });
                 this.db.addTransakcija({ materijal_id: mid, tip: 'ulaz', kolicina: kol, posao_id: null });
                 this.toast('Ulaz sačuvan ✓', 'success');
                 this.render();
@@ -824,6 +862,79 @@
                     this.toast('Transakcija obrisana', 'success');
                     this.render();
                 });
+            }
+
+            /* ---------- ISTORIJA ---------- */
+            render_istorija() {
+                if (!this.istF) this.istF = { tip: '', mat: '', posao: '', od: '', do: '' };
+                const f = this.istF;
+                const mats = this.db.getMaterijali();
+                const poslovi = this.db.get('poslovi');
+
+                let trans = this.db.getTransakcije();
+                if (f.tip) trans = trans.filter(t => t.tip === f.tip);
+                if (f.mat) trans = trans.filter(t => t.materijal_id === f.mat);
+                if (f.posao) trans = trans.filter(t => t.posao_id === f.posao);
+                if (f.od) trans = trans.filter(t => t.datum.slice(0, 10) >= f.od);
+                if (f.do) trans = trans.filter(t => t.datum.slice(0, 10) <= f.do);
+
+                let vredUlaz = 0, vredIzlaz = 0;
+                trans.forEach(t => {
+                    const m = this.db.materijal(t.materijal_id);
+                    const nab = t.nabavna != null ? t.nabavna : (m ? m.nabavna : 0);
+                    if (t.tip === 'ulaz') vredUlaz += t.kolicina * nab;
+                    else vredIzlaz += t.kolicina * nab;
+                });
+
+                const aktivanFilter = f.tip || f.mat || f.posao || f.od || f.do;
+
+                return `
+                    <div class="card">
+                        <div class="card-title">Filteri ${aktivanFilter ? `<button class="btn btn-ghost btn-small" onclick="app.istF=null; app.render()">✕ Poništi</button>` : ''}</div>
+                        <div class="form-grid2">
+                            <div class="form-group">
+                                <label class="form-label">Tip</label>
+                                <select onchange="app.istF.tip=this.value; app.render()">
+                                    <option value="">— svi —</option>
+                                    <option value="ulaz" ${f.tip === 'ulaz' ? 'selected' : ''}>📥 Ulazi</option>
+                                    <option value="izlaz" ${f.tip === 'izlaz' ? 'selected' : ''}>📤 Izlazi</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Materijal</label>
+                                <select onchange="app.istF.mat=this.value; app.render()">
+                                    <option value="">— svi —</option>
+                                    ${mats.map(m => `<option value="${m.id}" ${f.mat === m.id ? 'selected' : ''}>${esc(m.naziv)}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Posao</label>
+                                <select onchange="app.istF.posao=this.value; app.render()">
+                                    <option value="">— svi —</option>
+                                    ${poslovi.map(p => `<option value="${p.id}" ${f.posao === p.id ? 'selected' : ''}>${esc(p.naziv)}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Od — do</label>
+                                <div style="display:flex; gap:6px;">
+                                    <input type="date" value="${f.od}" onchange="app.istF.od=this.value; app.render()">
+                                    <input type="date" value="${f.do}" onchange="app.istF.do=this.value; app.render()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box"><div class="stat-value">${fmt(vredUlaz)}</div><div class="stat-label">Ulazi (nabavna) RSD</div></div>
+                        <div class="stat-box green"><div class="stat-value">${fmt(vredIzlaz)}</div><div class="stat-label">Izlazi (nabavna) RSD</div></div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">Transakcije (${trans.length})</div>
+                        ${trans.length ? trans.slice(0, 100).map(t => this.transRed(t)).join('') : '<div class="empty-state"><div class="big">🕘</div>Nema transakcija za izabrane filtere.</div>'}
+                        ${trans.length > 100 ? '<div class="empty-state">Prikazano prvih 100 — suzi filtere za ostale.</div>' : ''}
+                    </div>
+                `;
             }
 
             /* ---------- MATERIJALI ---------- */
@@ -922,13 +1033,14 @@
                                 <div>
                                     <div class="item-title">💼 ${esc(p.naziv)} <span class="badge ${p.status === 'aktivan' ? 'badge-blue' : 'badge-success'}">${p.status === 'aktivan' ? 'aktivan' : 'završen'}</span></div>
                                     <div class="item-meta">${esc(p.lokacija || '')}${p.datum ? ' • ' + fmtDate(p.datum) : ''}</div>
-                                    <div class="item-meta">Trošak: <strong>${fmt(fin.trosak)}</strong> • Naplativo: <strong>${fmt(fin.naplativo)}</strong> RSD</div>
-                                    <div class="item-value">Profit na materijalu: ${fmt(fin.profit)} RSD</div>
+                                    <div class="item-meta">Materijal: <strong>${fmt(fin.naplativo)}</strong>${fin.cenaRada ? ' • Rad: <strong>' + fmt(fin.cenaRada) + '</strong>' : ''} • Trošak: <strong>${fmt(fin.trosak)}</strong> RSD</div>
+                                    <div class="item-value ${fin.profit < 0 ? 'red' : ''}">Profit: ${fmt(fin.profit)} RSD</div>
                                 </div>
                             </div>
                             <div class="btn-row" style="margin-top:10px;">
                                 <button class="btn btn-ghost btn-small" onclick="app.detaljPosla('${p.id}')">📋 Detalji</button>
-                                <button class="btn btn-ghost btn-small" onclick="app.togglePosao('${p.id}')">${p.status === 'aktivan' ? '✅ Završi' : '↩️ Aktiviraj'}</button>
+                                <button class="btn btn-ghost btn-small" onclick="app.formaPosao('${p.id}')">✏️</button>
+                                <button class="btn btn-ghost btn-small" onclick="app.togglePosao('${p.id}')">${p.status === 'aktivan' ? '✅ Završi' : '↩️'}</button>
                                 <button class="btn btn-danger btn-small" onclick="app.obrisiPosao('${p.id}')">🗑</button>
                             </div>
                         </div>`;
@@ -936,20 +1048,28 @@
                 `;
             }
 
-            formaPosao() {
+            formaPosao(id) {
+                const p = id ? this.db.posao(id) : { naziv: '', lokacija: '', napomena: '', cenaRada: '' };
                 this.modal(`
-                    <div class="modal-title">Novi posao <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
-                    <div class="form-group"><label class="form-label">Naziv *</label><input id="pNaziv" placeholder="npr. Stan 5B — elektroinstalacije"></div>
-                    <div class="form-group"><label class="form-label">Lokacija</label><input id="pLok" placeholder="npr. Novi Sad, Bulevar 12"></div>
-                    <button class="btn" onclick="app.sacuvajPosao()">Sačuvaj</button>
+                    <div class="modal-title">${id ? 'Izmena posla' : 'Novi posao'} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="form-group"><label class="form-label">Naziv *</label><input id="pNaziv" value="${esc(p.naziv)}" placeholder="npr. Stan 5B — elektroinstalacije"></div>
+                    <div class="form-group"><label class="form-label">Lokacija</label><input id="pLok" value="${esc(p.lokacija || '')}" placeholder="npr. Novi Sad, Bulevar 12"></div>
+                    <div class="form-group"><label class="form-label">Cena rada (RSD)</label><input id="pRad" type="number" inputmode="decimal" step="any" value="${p.cenaRada || ''}" placeholder="0"></div>
+                    <div class="form-group"><label class="form-label">Napomena</label><textarea id="pNap" rows="2" placeholder="npr. dogovoreno sa investitorom...">${esc(p.napomena || '')}</textarea></div>
+                    <button class="btn" onclick="app.sacuvajPosao('${id || ''}')">Sačuvaj</button>
                 `);
             }
 
-            sacuvajPosao() {
-                const naziv = document.getElementById('pNaziv').value.trim();
-                if (!naziv) return this.toast('Naziv je obavezan', 'error');
-                this.db.addPosao({ naziv, lokacija: document.getElementById('pLok').value.trim() });
-                this.toast('Posao kreiran ✓', 'success');
+            sacuvajPosao(id) {
+                const data = {
+                    naziv: document.getElementById('pNaziv').value.trim(),
+                    lokacija: document.getElementById('pLok').value.trim(),
+                    cenaRada: num(document.getElementById('pRad').value),
+                    napomena: document.getElementById('pNap').value.trim()
+                };
+                if (!data.naziv) return this.toast('Naziv je obavezan', 'error');
+                if (id) { this.db.updatePosao(id, data); this.toast('Posao izmenjen ✓', 'success'); }
+                else { this.db.addPosao(data); this.toast('Posao kreiran ✓', 'success'); }
                 this.closeModal();
                 this.render();
             }
@@ -974,14 +1094,18 @@
                 const fin = this.db.posaoFinansije(id);
                 this.modal(`
                     <div class="modal-title">💼 ${esc(p.naziv)} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    ${p.napomena ? `<p style="font-size:13px; color:#64748b; margin-bottom:12px;">📝 ${esc(p.napomena)}</p>` : ''}
                     ${fin.stavke.length ? `
                     <div class="table-wrap"><table>
                         <thead><tr><th>Materijal</th><th class="num">Kol.</th><th class="num">Trošak</th><th class="num">Naplativo</th></tr></thead>
                         <tbody>${fin.stavke.map(s => `<tr><td>${esc(s.naziv)}</td><td class="num">${fmt(s.kolicina)} ${esc(s.jedinica)}</td><td class="num">${fmt(s.trosak)}</td><td class="num">${fmt(s.naplativo)}</td></tr>`).join('')}</tbody>
-                        <tfoot><tr><td>UKUPNO</td><td></td><td class="num">${fmt(fin.trosak)}</td><td class="num">${fmt(fin.naplativo)}</td></tr></tfoot>
+                        <tfoot>
+                            ${fin.cenaRada ? `<tr><td>Cena rada</td><td></td><td class="num">—</td><td class="num">${fmt(fin.cenaRada)}</td></tr>` : ''}
+                            <tr><td>UKUPNO</td><td></td><td class="num">${fmt(fin.trosak)}</td><td class="num">${fmt(fin.ukupnoNaplativo)}</td></tr>
+                        </tfoot>
                     </table></div>
-                    <p style="margin-top:12px; font-size:14px; font-weight:700; color:#15803d;">Profit na materijalu: ${fmt(fin.profit)} RSD</p>
-                    ` : '<div class="empty-state">Još nema utrošenog materijala na ovom poslu.<br>Kod izlaza izaberi ovaj posao.</div>'}
+                    <p style="margin-top:12px; font-size:14px; font-weight:700; color:${fin.profit >= 0 ? '#15803d' : '#b91c1c'};">Profit (materijal + rad): ${fmt(fin.profit)} RSD</p>
+                    ` : (fin.cenaRada ? `<p style="font-size:14px; font-weight:700; color:#15803d;">Cena rada: ${fmt(fin.cenaRada)} RSD</p><div class="empty-state">Još nema utrošenog materijala.</div>` : '<div class="empty-state">Još nema utrošenog materijala na ovom poslu.<br>Kod izlaza izaberi ovaj posao.</div>')}
                 `);
             }
 
@@ -1057,15 +1181,17 @@
                 });
 
                 const poPoslu = poslovi.map(p => ({ p, fin: this.db.posaoFinansije(p.id) }))
-                    .filter(x => x.fin.stavke.length)
+                    .filter(x => x.fin.stavke.length || x.fin.cenaRada)
                     .sort((a, b) => b.fin.profit - a.fin.profit);
+                const ukupnoRad = poPoslu.reduce((s, x) => s + x.fin.cenaRada, 0);
 
                 return `
                     <div class="stats-grid">
                         <div class="stat-box"><div class="stat-value">${fmt(ukupanUlazNab)}</div><div class="stat-label">Uloženo u nabavku RSD</div></div>
                         <div class="stat-box"><div class="stat-value">${fmt(ukupanIzlazNab)}</div><div class="stat-label">Utrošeno (nabavna) RSD</div></div>
-                        <div class="stat-box green"><div class="stat-value">${fmt(ukupanIzlazProd)}</div><div class="stat-label">Naplativo (prodajna) RSD</div></div>
-                        <div class="stat-box green"><div class="stat-value">${fmt(ukupanIzlazProd - ukupanIzlazNab)}</div><div class="stat-label">Profit na materijalu RSD</div></div>
+                        <div class="stat-box green"><div class="stat-value">${fmt(ukupanIzlazProd)}</div><div class="stat-label">Naplativo materijal RSD</div></div>
+                        <div class="stat-box green"><div class="stat-value">${fmt(ukupnoRad)}</div><div class="stat-label">Naplativo rad RSD</div></div>
+                        <div class="stat-box green" style="grid-column: span 2;"><div class="stat-value">${fmt(ukupanIzlazProd + ukupnoRad - ukupanIzlazNab)}</div><div class="stat-label">Ukupan profit (materijal + rad) RSD</div></div>
                     </div>
 
                     <div class="card">
@@ -1075,7 +1201,7 @@
                             <tbody>${poPoslu.map(x => `<tr>
                                 <td>${esc(x.p.naziv)}</td>
                                 <td class="num">${fmt(x.fin.trosak)}</td>
-                                <td class="num">${fmt(x.fin.naplativo)}</td>
+                                <td class="num">${fmt(x.fin.ukupnoNaplativo)}</td>
                                 <td class="num" style="color:${x.fin.profit >= 0 ? '#15803d' : '#b91c1c'}; font-weight:700;">${fmt(x.fin.profit)}</td>
                             </tr>`).join('')}</tbody>
                         </table></div>` : '<div class="empty-state">Nema izlaza vezanih za poslove.<br>Kod izlaza izaberi posao da bi se ovde video profit.</div>'}
