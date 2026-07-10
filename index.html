@@ -740,6 +740,7 @@
                 document.getElementById('modalOverlay').classList.add('active');
             }
             closeModal() {
+                this.brzi = false;
                 document.getElementById('modalOverlay').classList.remove('active');
             }
 
@@ -837,11 +838,12 @@
             }
 
             unosSheet() {
+                const pin = this.getPin();
                 this.modal(`
                     <div class="modal-title">Šta beležimo? <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
-                    <button class="btn" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.idiNa('ulazi')">📥 Ulaz — nabavio sam materijal</button>
-                    <button class="btn btn-success" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.idiNa('izlazi')">📤 Izlaz — ugradio / potrošio</button>
-                    <button class="btn btn-ghost" style="padding:14px;" onclick="app.idiNa('kompleti')">🧰 Kompleti — šabloni materijala</button>
+                    <button class="btn btn-success" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.brziUnos('izlaz')">📤 Izlaz — ugradio / potrošio${pin ? `<br><span style="font-size:11px; font-weight:400; opacity:0.85;">ide na 📌 ${esc(pin.naziv)}</span>` : ''}</button>
+                    <button class="btn" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.brziUnos('ulaz')">📥 Ulaz — nabavio sam materijal</button>
+                    <button class="btn btn-ghost" style="padding:14px;" onclick="app.brziKompleti()">🧰 Komplet — šablon u izlaz</button>
                 `);
             }
 
@@ -1125,7 +1127,7 @@
                     <div class="card">
                         <div class="card-title">${tip === 'ulaz' ? '📥 Novi ulaz (nabavka)' : '📤 Novi izlaz (potrošnja)'} ${korpa.length ? `<span class="badge badge-blue">${korpa.length} ${korpa.length === 1 ? 'stavka' : 'stavke/i'}</span>` : ''}</div>
                         ${stavke || '<div class="empty-state">Korpa je prazna.<br>Dodaj materijale pa sačuvaj sve odjednom.</div>'}
-                        <button class="btn btn-ghost" style="margin-top:10px;" onclick="app.otvoriPicker('${tip}')">➕ Dodaj materijal</button>
+                        <button class="btn btn-ghost" style="margin-top:10px;" onclick="app.brzi=false; app.otvoriPicker('${tip}')">➕ Dodaj materijal</button>
                         ${korpa.length ? `
                         <div class="form-grid2" style="margin-top:12px;">
                             <div class="form-group">
@@ -1160,8 +1162,20 @@
             otvoriPicker(tip) {
                 this.pickerTip = tip;
                 this.pickerF = '';
+                const korpa = this.korpa[tip];
+                const korpaBar = this.brzi && korpa.length ? `
+                    <div class="list-item" style="background:#eff6ff; border-color:#93c5fd; margin-bottom:10px;">
+                        <div class="list-row">
+                            <div class="item-meta" style="color:#1e40af;"><strong>🧺 ${korpa.length}</strong> ${korpa.length === 1 ? 'stavka' : 'stavke/i'} u korpi</div>
+                            <div style="display:flex; gap:6px;">
+                                <button class="btn ${tip === 'izlaz' ? 'btn-success' : ''} btn-small" onclick="app.sacuvajBrzo('${tip}')">✓ Sačuvaj</button>
+                                <button class="btn btn-ghost btn-small" onclick="app.brzi=false; app.closeModal(); app.idiNa('${tip === 'ulaz' ? 'ulazi' : 'izlazi'}')">Detalji</button>
+                            </div>
+                        </div>
+                    </div>` : '';
                 this.modal(`
-                    <div class="modal-title">Izaberi materijal <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <div class="modal-title">${tip === 'ulaz' ? '📥 Ulaz' : '📤 Izlaz'} — izaberi materijal <button class="drawer-close" onclick="app.brzi=false; app.closeModal()">✕</button></div>
+                    ${korpaBar}
                     <input class="search-input" id="pickerSearch" placeholder="🔍 Kucaj naziv, šifru ili kategoriju..." autocomplete="off"
                         oninput="app.pickerF=this.value; app.osveziListu('pickerLista', app.pickerLista())">
                     <div id="pickerLista" style="margin-top:10px; max-height:50vh; overflow-y:auto;">${this.pickerLista()}</div>
@@ -1237,8 +1251,12 @@
                     if (cena > 0) stavka.cena = cena;
                 }
                 this.korpa[tip].push(stavka);
-                this.closeModal();
-                this.render();
+                if (this.brzi) {
+                    this.otvoriPicker(tip);
+                } else {
+                    this.closeModal();
+                    this.render();
+                }
             }
 
             korpaUkloni(tip, i) {
@@ -1247,15 +1265,17 @@
             }
 
             sacuvajKorpu(tip) {
-                const korpa = this.korpa[tip];
-                if (!korpa.length) return;
                 const datumStr = document.getElementById('fDatum').value;
                 const danas = new Date().toISOString().slice(0, 10);
                 const datum = (!datumStr || datumStr === danas) ? new Date().toISOString() : new Date(datumStr + 'T12:00:00').toISOString();
                 const posao = tip === 'izlaz' ? (document.getElementById('fPosao').value || null) : null;
                 const napomenaEl = document.getElementById('fNapomena');
-                const napomena = napomenaEl ? napomenaEl.value.trim() : '';
+                this.sacuvajKorpuCore(tip, datum, posao, napomenaEl ? napomenaEl.value.trim() : '');
+            }
 
+            sacuvajKorpuCore(tip, datum, posao, napomena) {
+                const korpa = this.korpa[tip];
+                if (!korpa.length) return;
                 const preIds = new Set(this.db.get('transakcije').map(t => t.id));
                 korpa.forEach(s => {
                     if (tip === 'ulaz' && s.cena) this.db.updateMaterijal(s.materijal_id, { nabavna: s.cena });
@@ -1266,8 +1286,62 @@
                 this.lastAkcija = this.db.get('transakcije').filter(t => !preIds.has(t.id)).map(t => t.id);
                 const br = korpa.length;
                 this.korpa[tip] = [];
-                this.toastUndo(`${tip === 'ulaz' ? 'Ulaz' : 'Izlaz'} sačuvan — ${br} ${br === 1 ? 'stavka' : 'stavke/i'} ✓`);
+                const p = posao ? this.db.posao(posao) : null;
+                this.toastUndo(`${tip === 'ulaz' ? 'Ulaz' : 'Izlaz'} sačuvan — ${br} ${br === 1 ? 'stavka' : 'stavke/i'}${p ? ' na „' + p.naziv + '"' : ''} ✓`);
                 this.render();
+            }
+
+            /* ---------- BRZI UNOS (iz ➕) ---------- */
+            brziUnos(tip) {
+                this.brzi = true;
+                this.otvoriPicker(tip);
+            }
+
+            sacuvajBrzo(tip) {
+                if (!this.korpa[tip].length) return;
+                if (tip === 'izlaz') {
+                    const pin = this.getPin();
+                    if (pin) return this.zavrsiBrzo(tip, pin.id);
+                    const aktivni = this.db.getPoslovi().filter(p => p.status === 'aktivan');
+                    if (!aktivni.length) return this.zavrsiBrzo(tip, null);
+                    this.modal(`
+                        <div class="modal-title">Na koji posao? <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                        <div class="form-group">
+                            <select id="fBrziPosao">
+                                <option value="">— bez posla —</option>
+                                ${aktivni.map(p => `<option value="${p.id}">${esc(p.naziv)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <button class="btn btn-success" onclick="app.zavrsiBrzo('izlaz', document.getElementById('fBrziPosao').value || null)">✓ Sačuvaj</button>
+                    `);
+                    return;
+                }
+                this.zavrsiBrzo(tip, null);
+            }
+
+            zavrsiBrzo(tip, posaoId) {
+                this.brzi = false;
+                this.closeModal();
+                this.sacuvajKorpuCore(tip, new Date().toISOString(), posaoId, '');
+            }
+
+            brziKompleti() {
+                const kompleti = this.db.getKompleti();
+                if (!kompleti.length) return this.idiNa('kompleti');
+                this.brzi = true;
+                this.modal(`
+                    <div class="modal-title">🧰 Koji komplet? <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    ${kompleti.map(k => `<div class="list-item" style="cursor:pointer;" onclick="app.kompletUKorpu('${k.id}')">
+                        <div class="list-row">
+                            <div>
+                                <div class="item-title">🧰 ${esc(k.naziv)}</div>
+                                <div class="item-meta">${k.stavke.map(x => { const m = this.db.materijal(x.materijal_id); return m ? `${esc(m.naziv)} ×${fmt(x.kolicina)}` : ''; }).filter(Boolean).join(' • ')}</div>
+                            </div>
+                            <span style="color:#3b82f6; font-size:18px;">›</span>
+                        </div>
+                    </div>`).join('')}
+                    <button class="btn btn-ghost btn-small" style="margin-top:8px;" onclick="app.idiNa('kompleti')">✏️ Uredi komplete</button>
+                `);
             }
 
             /* ---------- UNDO / PONOVI ---------- */
@@ -2180,9 +2254,13 @@
                     if (postojeca) postojeca.kolicina += s.kolicina * puta;
                     else this.korpa.izlaz.push({ materijal_id: s.materijal_id, kolicina: s.kolicina * puta });
                 });
-                this.closeModal();
                 this.toast(`Komplet ×${puta} ubačen u korpu ✓`, 'success');
-                this.idiNa('izlazi');
+                if (this.brzi) {
+                    this.otvoriPicker('izlaz');
+                } else {
+                    this.closeModal();
+                    this.idiNa('izlazi');
+                }
             }
 
             /* ---------- POPIS ---------- */
