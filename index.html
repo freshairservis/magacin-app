@@ -780,6 +780,7 @@
             }
             closeModal() {
                 this.brzi = false;
+                this.otpisMode = false;
                 document.getElementById('modalOverlay').classList.remove('active');
             }
 
@@ -882,8 +883,15 @@
                     <div class="modal-title">Šta beležimo? <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
                     <button class="btn btn-success" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.brziUnos('izlaz')">📤 Izlaz — ugradio / potrošio${pin ? `<br><span style="font-size:11px; font-weight:400; opacity:0.85;">ide na 📌 ${esc(pin.naziv)}</span>` : ''}</button>
                     <button class="btn" style="padding:16px; font-size:15px; margin-bottom:10px;" onclick="app.brziUnos('ulaz')">📥 Ulaz — nabavio sam materijal</button>
-                    <button class="btn btn-ghost" style="padding:14px;" onclick="app.brziKompleti()">🧰 Komplet — šablon u izlaz</button>
+                    <button class="btn btn-ghost" style="padding:14px; margin-bottom:10px;" onclick="app.brziKompleti()">🧰 Komplet — šablon u izlaz</button>
+                    <button class="btn btn-ghost" style="padding:14px;" onclick="app.brziOtpis()">🗑 Otpis — rastur / lom / đubre</button>
                 `);
+            }
+
+            brziOtpis() {
+                this.otpisMode = true;
+                this.brzi = true;
+                this.otvoriPicker('izlaz');
             }
 
             /* ---------- GRUPNE STRANICE ---------- */
@@ -1226,7 +1234,7 @@
                         </div>
                     </div>` : '';
                 this.modal(`
-                    <div class="modal-title">${tip === 'ulaz' ? '📥 Ulaz' : '📤 Izlaz'} — izaberi materijal <button class="drawer-close" onclick="app.brzi=false; app.closeModal()">✕</button></div>
+                    <div class="modal-title">${tip === 'ulaz' ? '📥 Ulaz' : (this.otpisMode ? '🗑 Otpis' : '📤 Izlaz')} — izaberi materijal <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
                     ${korpaBar}
                     <input class="search-input" id="pickerSearch" placeholder="🔍 Kucaj naziv, šifru ili kategoriju..." autocomplete="off"
                         oninput="app.pickerF=this.value; app.osveziListu('pickerLista', app.pickerLista())">
@@ -1358,6 +1366,7 @@
             sacuvajBrzo(tip) {
                 if (!this.korpa[tip].length) return;
                 if (tip === 'izlaz') {
+                    if (this.otpisMode) return this.zavrsiBrzo('izlaz', '__otpis', '');
                     const pin = this.getPin();
                     if (pin) return this.zavrsiBrzo(tip, pin.id, '');
                     const aktivni = this.db.getPoslovi().filter(p => p.status === 'aktivan');
