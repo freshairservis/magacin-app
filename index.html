@@ -366,32 +366,6 @@
             font-size: 12px;
         }
 
-        .update-bar {
-            position: absolute;
-            top: 62px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1e293b;
-            color: #f1f5f9;
-            padding: 10px 16px;
-            border-radius: 12px;
-            font-size: 13px;
-            z-index: 550;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-        }
-        .update-bar button {
-            background: #3b82f6;
-            border: none;
-            color: #fff;
-            border-radius: 8px;
-            padding: 6px 12px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
         /* ---------- BADGES ---------- */
         .badge {
             display: inline-block;
@@ -3146,23 +3120,9 @@
             if (e.target.id === 'modalOverlay') app.closeModal();
         });
 
-        // PWA service worker + obavestenje o novoj verziji
+        // PWA service worker
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').then(reg => {
-                const ponudiOsvezenje = () => {
-                    if (document.getElementById('updateBar')) return;
-                    document.getElementById('root').insertAdjacentHTML('beforeend',
-                        `<div class="update-bar" id="updateBar">✨ Stigla je nova verzija <button onclick="location.reload()">Osveži</button></div>`);
-                };
-                if (reg.waiting && navigator.serviceWorker.controller) ponudiOsvezenje();
-                reg.addEventListener('updatefound', () => {
-                    const novi = reg.installing;
-                    if (!novi) return;
-                    novi.addEventListener('statechange', () => {
-                        if (novi.state === 'installed' && navigator.serviceWorker.controller) ponudiOsvezenje();
-                    });
-                });
-            }).catch(() => {});
+            navigator.serviceWorker.register('sw.js').catch(() => {});
         }
     </script>
 </body>
