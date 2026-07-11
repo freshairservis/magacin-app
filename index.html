@@ -492,7 +492,35 @@
         /* ================= DATA ================= */
         class DataManager {
             constructor() {
+                this.seed();
                 this.migrate();
+            }
+
+            // pocetni sifarnik — samo pri prvom ulasku u app, korisnik slobodno brise/menja
+            seed() {
+                if (localStorage.getItem('magacin_seed')) return;
+                localStorage.setItem('magacin_seed', '1');
+                if (this.get('materijali').length) return; // postojeci korisnik sa podacima
+                const start = [
+                    // Elektro
+                    { naziv: 'Kabl PP-Y 3x1.5', kategorija: 'Elektro', jedinica: 'm', nabavna: 95, prodajna: 140, minZaliha: 20 },
+                    { naziv: 'Kabl PP-Y 3x2.5', kategorija: 'Elektro', jedinica: 'm', nabavna: 140, prodajna: 200, minZaliha: 20 },
+                    { naziv: 'Utičnica monofazna', kategorija: 'Elektro', jedinica: 'kom', nabavna: 350, prodajna: 550, minZaliha: 3 },
+                    // Klime
+                    { naziv: 'Bakarna cev 1/4"', kategorija: 'Klime', jedinica: 'm', nabavna: 320, prodajna: 480, minZaliha: 5 },
+                    { naziv: 'Bakarna cev 3/8"', kategorija: 'Klime', jedinica: 'm', nabavna: 450, prodajna: 650, minZaliha: 5 },
+                    { naziv: 'Nosač spoljne jedinice', kategorija: 'Klime', jedinica: 'kom', nabavna: 1200, prodajna: 1800, minZaliha: 1 },
+                    // Solar
+                    { naziv: 'Solarni kabl 6mm²', kategorija: 'Solar', jedinica: 'm', nabavna: 180, prodajna: 280, minZaliha: 20 },
+                    { naziv: 'MC4 konektor (par)', kategorija: 'Solar', jedinica: 'kom', nabavna: 250, prodajna: 450, minZaliha: 4 },
+                    { naziv: 'Krovni nosač panela', kategorija: 'Solar', jedinica: 'kom', nabavna: 950, prodajna: 1400, minZaliha: 4 },
+                    // Sitnice
+                    { naziv: 'Tiplovi 8mm', kategorija: 'Sitnice', jedinica: 'kom', nabavna: 3, prodajna: 8, minZaliha: 50, pakovanje: 100 },
+                    { naziv: 'Vijak samourezujući 4.2x38', kategorija: 'Sitnice', jedinica: 'kom', nabavna: 4, prodajna: 10, minZaliha: 50, pakovanje: 100 },
+                    { naziv: 'Vezice 200mm', kategorija: 'Sitnice', jedinica: 'kom', nabavna: 2, prodajna: 5, minZaliha: 100, pakovanje: 100 },
+                    { naziv: 'Izolir traka', kategorija: 'Sitnice', jedinica: 'kom', nabavna: 90, prodajna: 150, minZaliha: 3 }
+                ];
+                this.set('materijali', start.map(m => ({ id: uid() + Math.random().toString(36).slice(2, 5), sku: '', ...m })));
             }
 
             migrate() {
