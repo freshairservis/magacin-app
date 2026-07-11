@@ -16,5 +16,25 @@
             "type": "image/svg+xml",
             "purpose": "any"
         }
+    ],
+    "shortcuts": [
+        {
+            "name": "Izlaz — ugradio / potrošio",
+            "short_name": "Izlaz",
+            "url": "./?akcija=izlaz",
+            "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+        },
+        {
+            "name": "Ulaz — nabavio materijal",
+            "short_name": "Ulaz",
+            "url": "./?akcija=ulaz",
+            "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+        },
+        {
+            "name": "Otpis — rastur / lom",
+            "short_name": "Otpis",
+            "url": "./?akcija=otpis",
+            "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+        }
     ]
 }

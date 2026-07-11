@@ -331,6 +331,20 @@
             color: #ffffff;
         }
 
+        .progress-track {
+            background: #e2e8f0;
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #3b82f6, #22c55e);
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.3s;
+        }
+
         .pin-bar {
             background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
             color: #ffffff;
@@ -526,7 +540,15 @@
             get(key) { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } }
             set(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
-            getMaterijali() { return this.get('materijali').sort((a, b) => a.naziv.localeCompare(b.naziv, 'sr')); }
+            getMaterijali(iArhivirane) {
+                return this.get('materijali')
+                    .filter(m => iArhivirane || !m.arhiviran)
+                    .sort((a, b) => a.naziv.localeCompare(b.naziv, 'sr'));
+            }
+
+            lokacije() {
+                return [...new Set(this.get('materijali').map(m => (m.lokacija || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'sr'));
+            }
             getTransakcije() { return this.get('transakcije').sort((a, b) => new Date(b.datum) - new Date(a.datum)); }
             getPoslovi() { return this.get('poslovi').sort((a, b) => (a.status === 'aktivan' ? 0 : 1) - (b.status === 'aktivan' ? 0 : 1)); }
 
@@ -626,6 +648,7 @@
             // materijali ispod ciljne marze
             ispodMarze() {
                 return this.get('materijali').filter(m => {
+                    if (m.arhiviran) return false;
                     if (!m.marza || !(m.nabavna > 0)) return false;
                     const marzaSad = (m.prodajna - m.nabavna) / m.nabavna * 100;
                     return marzaSad < m.marza - 0.5;
@@ -661,8 +684,8 @@
                     t.materijal_id === materijal_id ? s + (t.tip === 'ulaz' ? t.kolicina : -t.kolicina) : s, 0);
             }
 
-            getInventura() {
-                return this.getMaterijali().map(m => {
+            getInventura(iArhivirane) {
+                return this.getMaterijali(iArhivirane).map(m => {
                     const stanje = this.stanje(m.id);
                     return { ...m, stanje, vredNabavna: stanje * m.nabavna, vredProdajna: stanje * m.prodajna };
                 });
@@ -808,6 +831,8 @@
                 this.filter = '';
                 this.istF = null;
                 this.katF = '';
+                this.lokF = '';
+                this.arhivaView = false;
                 this.closeModal();
                 this.render();
             }
@@ -1050,8 +1075,10 @@
                         <div class="item-value" style="margin-top:6px;">Ugrađeno: ${fmt(fin.naplativo)} RSD${fin.cenaRada ? ' + rad ' + fmt(fin.cenaRada) : ''} • profit ${fmt(fin.profit)}</div>
                     ` : '<div class="item-meta">Još nema utrošenog materijala na ovom poslu.</div>'}
                     ${zaPoneti.length ? `<div class="item-meta" style="margin-top:6px; color:#92400e;">🎒 Za poneti: ${zaPoneti.map(z => esc(z.tekst)).join(', ')}</div>` : ''}
+                    ${this.progresBar(this.progresPosla(pin.id))}
                     <div class="btn-row" style="margin-top:10px;">
                         <button class="btn btn-success btn-small" onclick="app.idiNa('izlazi')">📤 Dodaj izlaz</button>
+                        ${this.tovarStavke(pin.id).length ? `<button class="btn btn-ghost btn-small" onclick="app.tovarenje('${pin.id}')">🚚 Tovarenje</button>` : ''}
                         <button class="btn btn-ghost btn-small" onclick="app.detaljPosla('${pin.id}')">📋 Detalji</button>
                     </div>
                 </div>`;
@@ -1081,6 +1108,19 @@
                     t: `⚠️ <strong>${niska.length} ${niska.length === 1 ? 'materijal je' : 'materijala je'} ispod minimuma</strong> — pogledaj šoping listu.`,
                     go: 'soping'
                 });
+
+                // 00. pre polaska: pinovan posao sa planom kome nesto fali
+                const pin = this.getPin();
+                if (pin) {
+                    const fali = this.tovarStavke(pin.id).filter(s => s.fali > 0);
+                    if (fali.length) {
+                        const cena = fali.reduce((s, x) => { const m = this.db.materijal(x.mid); return s + x.fali * (m ? m.nabavna : 0); }, 0);
+                        saveti.push({
+                            t: `🌅 <strong>Pre polaska na ${esc(pin.naziv)}:</strong> fali ti ${fali.map(x => `${esc(x.tekst)} (${fmt(x.fali)})`).join(', ')} — ~${fmt(cena)} RSD. <span style="text-decoration:underline;" onclick="event.stopPropagation(); app.tovarenje('${pin.id}')">Otvori tovarenje</span>.`,
+                            go: null
+                        });
+                    }
+                }
 
                 // 0a. cuvar marze
                 const losaMarza = this.db.ispodMarze();
@@ -1143,6 +1183,18 @@
                     return mes > 0 && i.minZaliha < mes / 4;
                 });
                 if (zaMinimum.length >= 3) saveti.push({ t: `🎯 Minimalne zalihe za <strong>${zaMinimum.length} materijala</strong> su premale za tvoju potrošnju — <span style="text-decoration:underline;" onclick="event.stopPropagation(); app.predloziMinimume()">predloži nove</span>.`, go: null });
+
+                // 5. imas za jos N kompleta
+                this.db.getKompleti().slice(0, 8).forEach(k => {
+                    if (!k.stavke.length) return;
+                    let n = Infinity, ok = true;
+                    k.stavke.forEach(s => {
+                        const m = this.db.materijal(s.materijal_id);
+                        if (!m || m.arhiviran || s.kolicina <= 0) { ok = false; return; }
+                        n = Math.min(n, Math.floor(this.db.stanje(s.materijal_id) / s.kolicina));
+                    });
+                    if (ok && isFinite(n) && n > 0 && n <= 20) saveti.push({ t: `🧮 Sa trenutnim stanjem imaš materijala za još <strong>~${n} × ${esc(k.naziv)}</strong>.`, go: 'stanje' });
+                });
 
                 if (!saveti.length) return '';
                 return `<div class="card" style="border-color:#c7d2fe; background:linear-gradient(135deg,#ffffff 0%,#eef2ff 100%);">
@@ -1253,7 +1305,7 @@
                     <div class="list-row">
                         <div>
                             <div class="item-title">${esc(m.naziv)}</div>
-                            <div class="item-meta">${m.kategorija ? esc(m.kategorija) + ' • ' : ''}na stanju: ${fmt(m.stanje)} ${esc(m.jedinica)}</div>
+                            <div class="item-meta">${m.kategorija ? esc(m.kategorija) + ' • ' : ''}na stanju: ${fmt(m.stanje)} ${esc(m.jedinica)}${m.lokacija ? ' • 📍 ' + esc(m.lokacija) : ''}</div>
                         </div>
                         <span style="color:#3b82f6; font-size:18px;">›</span>
                     </div>
@@ -1641,12 +1693,14 @@
             render_materijali() {
                 const kategorije = this.db.kategorije();
                 if (!this.katF) this.katF = '';
+                const brArhiviranih = this.db.get('materijali').filter(m => m.arhiviran).length;
                 return `
                     <div class="btn-row">
                         <button class="btn" onclick="app.formaMaterijal()">➕ Novi</button>
                         <button class="btn btn-ghost" onclick="app.predloziMinimume()">🎯 Minimumi</button>
                         <button class="btn btn-ghost" onclick="app.srediMarze()">🛡 Marže</button>
                     </div>
+                    ${brArhiviranih || this.arhivaView ? `<div class="item-meta" style="cursor:pointer;" onclick="app.arhivaView=!app.arhivaView; app.render()">${this.arhivaView ? '← Nazad na aktivne artikle' : `🗄 Arhiva (${brArhiviranih}) →`}</div>` : ''}
                     <input class="search-input" placeholder="🔍 Pretraži materijale..." value="${esc(this.filter)}"
                         oninput="app.filter=this.value; app.osveziListu('listaMat', app.listaMaterijala())">
                     ${kategorije.length ? `<div class="chip-row">
@@ -1659,21 +1713,24 @@
 
             listaMaterijala() {
                 const f = this.filter.toLowerCase();
-                let mats = this.db.getInventura().filter(m =>
-                    !f || m.naziv.toLowerCase().includes(f) || (m.sku || '').toLowerCase().includes(f) || (m.kategorija || '').toLowerCase().includes(f));
+                let mats = this.db.getInventura(true)
+                    .filter(m => this.arhivaView ? m.arhiviran : !m.arhiviran)
+                    .filter(m => !f || m.naziv.toLowerCase().includes(f) || (m.sku || '').toLowerCase().includes(f) || (m.kategorija || '').toLowerCase().includes(f));
                 if (this.katF) mats = mats.filter(m => m.kategorija === this.katF);
-                if (!mats.length) return '<div class="card"><div class="empty-state"><div class="big">🔧</div>Nema materijala.</div></div>';
+                if (!mats.length) return `<div class="card"><div class="empty-state"><div class="big">${this.arhivaView ? '🗄' : '🔧'}</div>${this.arhivaView ? 'Arhiva je prazna.' : 'Nema materijala.'}</div></div>`;
                 return `<div class="card">${mats.map(m => `
                     <div class="list-item">
                         <div class="list-row">
                             <div>
                                 <div class="item-title">${esc(m.naziv)} ${m.stanje <= m.minZaliha ? '<span class="badge badge-danger">nisko</span>' : ''}</div>
                                 <div class="item-meta">${m.kategorija ? '🏷 ' + esc(m.kategorija) + ' • ' : ''}${m.sku ? esc(m.sku) + ' • ' : ''}nab. ${fmt(m.nabavna)} / prod. ${fmt(m.prodajna)} RSD • min: ${fmt(m.minZaliha)}</div>
-                                <div class="item-meta">Na stanju: <strong>${fmt(m.stanje)} ${esc(m.jedinica)}</strong></div>
+                                <div class="item-meta">Na stanju: <strong>${fmt(m.stanje)} ${esc(m.jedinica)}</strong>${m.lokacija ? ' • 📍 ' + esc(m.lokacija) : ''}</div>
                             </div>
                             <div style="display:flex; gap:6px;">
+                                ${m.arhiviran ? `<button class="icon-btn" onclick="app.vratiIzArhive('${m.id}')">♻️</button>` : `
                                 <button class="icon-btn" onclick="app.istorijaNabavki('${m.id}')">📉</button>
                                 <button class="icon-btn" onclick="app.formaMaterijal('${m.id}')">✏️</button>
+                                <button class="icon-btn" onclick="app.arhiviraj('${m.id}')">🗄</button>`}
                                 <button class="icon-btn danger" onclick="app.obrisiMaterijal('${m.id}')">🗑</button>
                             </div>
                         </div>
@@ -1696,10 +1753,17 @@
                             <select id="mJed">${['kom', 'm', 'kg', 'l', 'pak', 'rol'].map(j => `<option ${m.jedinica === j ? 'selected' : ''}>${j}</option>`).join('')}</select>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Kategorija</label>
-                        <input id="mKat" value="${esc(m.kategorija || '')}" placeholder="npr. Kablovi" list="katList">
-                        <datalist id="katList">${kategorije.map(k => `<option value="${esc(k)}">`).join('')}</datalist>
+                    <div class="form-grid2">
+                        <div class="form-group">
+                            <label class="form-label">Kategorija</label>
+                            <input id="mKat" value="${esc(m.kategorija || '')}" placeholder="npr. Kablovi" list="katList">
+                            <datalist id="katList">${kategorije.map(k => `<option value="${esc(k)}">`).join('')}</datalist>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">📍 Lokacija (gde stoji)</label>
+                            <input id="mLok" value="${esc(m.lokacija || '')}" placeholder="npr. kombi — fioka 3" list="lokList">
+                            <datalist id="lokList">${this.db.lokacije().map(l => `<option value="${esc(l)}">`).join('')}</datalist>
+                        </div>
                     </div>
                     <div class="form-grid2">
                         <div class="form-group"><label class="form-label">Nabavna cena (RSD)</label><input id="mNab" type="number" inputmode="decimal" step="any" value="${m.nabavna}"></div>
@@ -1719,6 +1783,7 @@
                     naziv: document.getElementById('mNaziv').value.trim(),
                     sku: document.getElementById('mSku').value.trim(),
                     kategorija: document.getElementById('mKat').value.trim(),
+                    lokacija: document.getElementById('mLok').value.trim(),
                     jedinica: document.getElementById('mJed').value,
                     nabavna: num(document.getElementById('mNab').value),
                     prodajna: num(document.getElementById('mProd').value),
@@ -1826,6 +1891,22 @@
                 `);
             }
 
+            arhiviraj(id) {
+                const m = this.db.materijal(id);
+                const stanje = this.db.stanje(id);
+                this.confirm(`Arhivirati <strong>${esc(m.naziv)}</strong>?${stanje > 0 ? `<br>⚠️ Na stanju ima još ${fmt(stanje)} ${esc(m.jedinica)} — nestaće iz pregleda dok ga ne vratiš.` : '<br>Nestaje iz pickera, stanja i šoping liste — istorija ostaje.'}`, () => {
+                    this.db.updateMaterijal(id, { arhiviran: true });
+                    this.toast('Arhivirano 🗄', 'success');
+                    this.render();
+                });
+            }
+
+            vratiIzArhive(id) {
+                this.db.updateMaterijal(id, { arhiviran: false });
+                this.toast('Vraćeno iz arhive ♻️', 'success');
+                this.render();
+            }
+
             obrisiMaterijal(id) {
                 const m = this.db.materijal(id);
                 this.confirm(`Obrisati <strong>${esc(m.naziv)}</strong>?<br>Brišu se i sve njegove transakcije!`, () => {
@@ -1868,10 +1949,12 @@
                                     <div class="item-meta">${esc(p.lokacija || '')}${p.datum ? ' • ' + fmtDate(p.datum) : ''}</div>
                                     <div class="item-meta">Materijal: <strong>${fmt(fin.naplativo)}</strong>${fin.cenaRada ? ' • Rad: <strong>' + fmt(fin.cenaRada) + '</strong>' : ''} • Trošak: <strong>${fmt(fin.trosak)}</strong> RSD</div>
                                     <div class="item-value ${fin.profit < 0 ? 'red' : ''}">Profit: ${fmt(fin.profit)} RSD</div>
+                                    ${this.progresBar(this.progresPosla(p.id))}
                                 </div>
                             </div>
                             <div class="btn-row" style="margin-top:10px;">
                                 ${p.status === 'aktivan' ? `<button class="btn ${this.getPin() && this.getPin().id === p.id ? '' : 'btn-ghost'} btn-small" onclick="app.pinuj('${p.id}')">📌</button>` : ''}
+                                ${p.status === 'aktivan' && this.tovarStavke(p.id).length ? `<button class="btn btn-ghost btn-small" onclick="app.tovarenje('${p.id}')">🚚</button>` : ''}
                                 <button class="btn btn-ghost btn-small" onclick="app.detaljPosla('${p.id}')">📋 Detalji</button>
                                 <button class="btn btn-ghost btn-small" onclick="app.specifikacija('${p.id}')">🖨</button>
                                 <button class="btn btn-ghost btn-small" onclick="app.formaPosao('${p.id}')">✏️</button>
@@ -2046,6 +2129,85 @@
                 this.render();
             }
 
+            /* ---------- PROGRES I TOVARENJE ---------- */
+            progresPosla(posaoId) {
+                const p = this.db.posao(posaoId);
+                if (!p || !p.plan || !p.plan.length) return null;
+                let plan = 0, gotovo = 0;
+                p.plan.forEach(pl => {
+                    plan += pl.kolicina;
+                    gotovo += Math.min(this.db.utrosenoNaPoslu(posaoId, pl.materijal_id), pl.kolicina);
+                });
+                return plan > 0 ? Math.round(gotovo / plan * 100) : null;
+            }
+
+            progresBar(pct) {
+                if (pct === null) return '';
+                return `<div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+                    <div class="item-meta" style="margin-top:3px;">📐 ${pct}% plana ugrađeno</div>`;
+            }
+
+            tovarStavke(posaoId) {
+                const p = this.db.posao(posaoId);
+                const stavke = [];
+                (p.plan || []).forEach(pl => {
+                    const m = this.db.materijal(pl.materijal_id);
+                    if (!m) return;
+                    const preostalo = Math.max(0, pl.kolicina - this.db.utrosenoNaPoslu(posaoId, pl.materijal_id));
+                    if (preostalo <= 0) return;
+                    const fali = Math.max(0, preostalo - Math.max(0, this.db.stanje(pl.materijal_id)));
+                    stavke.push({ key: 'm:' + pl.materijal_id, tekst: m.naziv, kol: preostalo, jedinica: m.jedinica, lokacija: m.lokacija || '', fali, mid: pl.materijal_id });
+                });
+                (p.zaPoneti || []).filter(z => !z.done).forEach(z => stavke.push({ key: 'z:' + z.id, tekst: z.tekst, kol: null, lokacija: '', fali: 0 }));
+                return stavke;
+            }
+
+            tovarenje(posaoId) {
+                const p = this.db.posao(posaoId);
+                if (!this.tovarV) this.tovarV = {};
+                const stavke = this.tovarStavke(posaoId);
+                if (!stavke.length) return this.toast('Nema šta da se tovari — plan je ugrađen, „za poneti" prazno', 'success');
+                this.modal(`
+                    <div class="modal-title">🚚 Tovarenje: ${esc(p.naziv)} <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    ${stavke.map(s => {
+                        const ck = this.tovarV[posaoId + s.key];
+                        return `<div class="list-item" style="padding:10px 12px; ${s.fali > 0 ? 'border-color:#fecaca; background:#fef2f2;' : ''}">
+                            <div class="item-meta" style="cursor:pointer; ${ck ? 'text-decoration:line-through; opacity:0.5;' : 'color:#334155; font-weight:600;'}" onclick="app.tovarToggle('${posaoId}', '${s.key}')">
+                                ${ck ? '☑' : '☐'} ${esc(s.tekst)}${s.kol != null ? ' — ' + fmt(s.kol) + ' ' + esc(s.jedinica) : ''}${s.lokacija ? ' • 📍 ' + esc(s.lokacija) : ''}
+                                ${s.fali > 0 ? `<div style="color:#b91c1c; font-weight:700;">⚠️ fali ${fmt(s.fali)} — kupi usput${(() => { const j = this.najjeftinijaNabavka(s.mid); return j ? ' (' + esc(j.dobavljac) + ')' : ''; })()}</div>` : ''}
+                            </div>
+                        </div>`;
+                    }).join('')}
+                    <div class="btn-row" style="margin-top:10px;">
+                        <button class="btn btn-ghost btn-small" onclick="app.kopirajTovar('${posaoId}')">📋 Kopiraj</button>
+                        ${navigator.share ? `<button class="btn btn-ghost btn-small" onclick="app.podeliTovar('${posaoId}')">📤 Podeli</button>` : ''}
+                    </div>
+                `);
+            }
+
+            tovarToggle(posaoId, key) {
+                if (!this.tovarV) this.tovarV = {};
+                this.tovarV[posaoId + key] = !this.tovarV[posaoId + key];
+                this.tovarenje(posaoId);
+            }
+
+            tovarTekst(posaoId) {
+                const p = this.db.posao(posaoId);
+                return `🚚 Tovarenje — ${p.naziv} (${fmtDate(new Date())})\n` + this.tovarStavke(posaoId).map(s =>
+                    `☐ ${s.tekst}${s.kol != null ? ' — ' + fmt(s.kol) + ' ' + s.jedinica : ''}${s.lokacija ? ' [' + s.lokacija + ']' : ''}${s.fali > 0 ? ' ⚠️ KUPI ' + fmt(s.fali) : ''}`
+                ).join('\n');
+            }
+
+            kopirajTovar(posaoId) {
+                navigator.clipboard.writeText(this.tovarTekst(posaoId))
+                    .then(() => this.toast('Lista kopirana ✓', 'success'))
+                    .catch(() => this.toast('Kopiranje nije uspelo', 'error'));
+            }
+
+            podeliTovar(posaoId) {
+                navigator.share({ title: 'Tovarenje', text: this.tovarTekst(posaoId) }).catch(() => {});
+            }
+
             /* ---------- PLAN POSLA ---------- */
             planDodaj(posaoId) {
                 const mid = document.getElementById('planMat').value;
@@ -2147,6 +2309,10 @@
                         ${sortChip('nisko', '⚠️ Nisko prvo')}
                         ${sortChip('vrednost', '💰 Po vrednosti')}
                     </div>
+                    ${this.db.lokacije().length ? `<div class="chip-row">
+                        <span class="chip ${!this.lokF ? 'active' : ''}" onclick="app.lokF=''; app.render()">📍 Sve</span>
+                        ${this.db.lokacije().map(l => `<span class="chip ${this.lokF === l ? 'active' : ''}" onclick="app.lokF='${esc(l)}'; app.render()">${esc(l)}</span>`).join('')}
+                    </div>` : ''}
                     <div id="listaStanje">${this.tabelaStanja()}</div>
                     ${this.topPotrosnja()}
                 `;
@@ -2178,6 +2344,7 @@
             tabelaStanja() {
                 const f = this.filter.toLowerCase();
                 let inv = this.db.getInventura().filter(i => !f || i.naziv.toLowerCase().includes(f));
+                if (this.lokF) inv = inv.filter(i => i.lokacija === this.lokF);
                 if (this.stanjeSort === 'nisko') inv.sort((a, b) => (a.stanje - a.minZaliha) - (b.stanje - b.minZaliha));
                 else if (this.stanjeSort === 'vrednost') inv.sort((a, b) => b.vredNabavna - a.vredNabavna);
                 if (!inv.length) return '<div class="card"><div class="empty-state"><div class="big">📊</div>Nema materijala.</div></div>';
@@ -2189,7 +2356,7 @@
                         const rez = this.db.rezervisano(i.id);
                         return `
                         <tr>
-                            <td>${esc(i.naziv)}${i.stanje <= i.minZaliha ? ' <span class="badge badge-danger">nisko</span>' : ''}</td>
+                            <td>${esc(i.naziv)}${i.stanje <= i.minZaliha ? ' <span class="badge badge-danger">nisko</span>' : ''}${i.lokacija ? `<div style="font-size:10px; color:#94a3b8;">📍 ${esc(i.lokacija)}</div>` : ''}</td>
                             <td class="num"><strong>${fmt(i.stanje)}</strong> ${esc(i.jedinica)}${rez > 0 ? `<div style="font-size:10px; color:#92400e;">🔒 rez. ${fmt(rez)}</div>` : ''}</td>
                             <td class="num">${fmt(Math.max(0, i.vredNabavna))}</td>
                             <td class="num">${fmt(Math.max(0, i.vredProdajna))}</td>
@@ -2882,6 +3049,16 @@
         }
 
         const app = new MagacinApp();
+
+        // PWA precice: dugi pritisak na ikonu -> ?akcija=izlaz/ulaz/otpis
+        (() => {
+            const akcija = new URLSearchParams(location.search).get('akcija');
+            if (!akcija) return;
+            history.replaceState(null, '', location.pathname);
+            if (akcija === 'izlaz') app.brziUnos('izlaz');
+            else if (akcija === 'ulaz') app.brziUnos('ulaz');
+            else if (akcija === 'otpis') app.brziOtpis();
+        })();
 
         // zatvori modal klikom van njega
         document.getElementById('modalOverlay').addEventListener('click', e => {
