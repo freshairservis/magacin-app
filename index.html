@@ -2071,7 +2071,7 @@
 
                 const w = window.open('', '_blank');
                 if (!w) return this.toast('Browser je blokirao novi prozor', 'error');
-                w.document.write(`<!DOCTYPE html><html lang="sr"><head><meta charset="UTF-8"><title>Specifikacija — ${esc(p.naziv)}</title>
+                w.document.write(`<!DOCTYPE html><html lang="sr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Specifikacija — ${esc(p.naziv)}</title>
                     <style>
                         body { font-family: -apple-system, 'Segoe UI', sans-serif; color: #1e293b; max-width: 700px; margin: 30px auto; padding: 0 20px; }
                         h1 { font-size: 22px; margin-bottom: 4px; }
@@ -2079,9 +2079,18 @@
                         table { width: 100%; border-collapse: collapse; font-size: 13px; }
                         th { text-align: left; border-bottom: 2px solid #1e293b; padding: 8px 6px; font-size: 11px; text-transform: uppercase; }
                         td { padding: 8px 6px; border-bottom: 1px solid #e2e8f0; }
-                        .num { text-align: right; }
+                        .num { text-align: right; white-space: nowrap; }
                         tfoot td { font-weight: 700; border-top: 2px solid #1e293b; border-bottom: none; font-size: 15px; }
                         .footer { margin-top: 40px; color: #94a3b8; font-size: 11px; }
+                        @media (max-width: 600px) {
+                            body { margin: 14px auto; padding: 0 10px; }
+                            h1 { font-size: 17px; }
+                            .meta { margin-bottom: 14px; font-size: 12px; }
+                            table { font-size: 11px; }
+                            th, td { padding: 6px 3px; }
+                            th { font-size: 9px; }
+                            tfoot td { font-size: 13px; }
+                        }
                         @media print { .no-print { display: none; } body { margin: 0 auto; } }
                     </style></head><body>
                     <h1>Specifikacija radova i materijala</h1>
@@ -2243,7 +2252,7 @@
 
                 const w = window.open('', '_blank');
                 if (!w) return this.toast('Browser je blokirao novi prozor', 'error');
-                w.document.write(`<!DOCTYPE html><html lang="sr"><head><meta charset="UTF-8"><title>Ponuda — ${esc(p.naziv)}</title>
+                w.document.write(`<!DOCTYPE html><html lang="sr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Ponuda — ${esc(p.naziv)}</title>
                     <style>
                         body { font-family: -apple-system, 'Segoe UI', sans-serif; color: #1e293b; max-width: 700px; margin: 30px auto; padding: 0 20px; }
                         h1 { font-size: 22px; margin-bottom: 4px; }
@@ -2251,9 +2260,18 @@
                         table { width: 100%; border-collapse: collapse; font-size: 13px; }
                         th { text-align: left; border-bottom: 2px solid #1e293b; padding: 8px 6px; font-size: 11px; text-transform: uppercase; }
                         td { padding: 8px 6px; border-bottom: 1px solid #e2e8f0; }
-                        .num { text-align: right; }
+                        .num { text-align: right; white-space: nowrap; }
                         tfoot td { font-weight: 700; border-top: 2px solid #1e293b; border-bottom: none; font-size: 15px; }
                         .footer { margin-top: 40px; color: #94a3b8; font-size: 11px; }
+                        @media (max-width: 600px) {
+                            body { margin: 14px auto; padding: 0 10px; }
+                            h1 { font-size: 17px; }
+                            .meta { margin-bottom: 14px; font-size: 12px; }
+                            table { font-size: 11px; }
+                            th, td { padding: 6px 3px; }
+                            th { font-size: 9px; }
+                            tfoot td { font-size: 13px; }
+                        }
                         @media print { .no-print { display: none; } body { margin: 0 auto; } }
                     </style></head><body>
                     <h1>PONUDA</h1>
@@ -2930,12 +2948,75 @@
                 </table></div>`;
             }
 
+            /* ---------- VODIČ ---------- */
+            vodic() {
+                this.vodicF = '';
+                this.modal(`
+                    <div class="modal-title">❓ Vodič — šta je šta <button class="drawer-close" onclick="app.closeModal()">✕</button></div>
+                    <input class="search-input" id="vodicSearch" placeholder="🔍 Traži: šoping, marža, otpis..." autocomplete="off"
+                        oninput="app.vodicF=this.value; app.osveziListu('vodicLista', app.vodicLista())">
+                    <div id="vodicLista" style="margin-top:10px; max-height:55vh; overflow-y:auto;">${this.vodicLista()}</div>
+                `);
+            }
+
+            vodicLista() {
+                const VODIC = [
+                    ['🏠 Početna', 'Jutarnji pregled: šta je danas rađeno, tekući posao i saveti.'],
+                    ['➕ Dugme u sredini', 'Brzi unos: Izlaz (potrošio/ugradio), Ulaz (nabavio), Komplet, Otpis. Sve se završava u par dodira.'],
+                    ['📤 Izlaz', 'Beleži materijal koji si potrošio/ugradio — skida sa stanja. Veži ga za posao da se računa profit.'],
+                    ['📥 Ulaz', 'Beleži nabavku — dodaje na stanje. Možeš upisati novu cenu i radnju gde si kupio.'],
+                    ['🧺 Korpa', 'Kod unosa dodaješ više materijala pa sačuvaš sve odjednom — jedan račun, jedan unos.'],
+                    ['📌 Pin posla', 'Klikneš 📌 na poslu na kom radiš — svaki izlaz automatski ide na njega. Skidaš klikom na ✕ u plavoj traci.'],
+                    ['🗑 Otpis', 'Rastur, lom, đubre — skida sa stanja ali se ne naplaćuje nikom. Zbir vidiš u Izveštajima.'],
+                    ['↩️ PONIŠTI i 🔁', 'Posle čuvanja imaš 6 sekundi dugme PONIŠTI. Strelice 🔁 na transakciji je ponavljaju u korpu.'],
+                    ['📊 Stanje', 'Šta imaš i koliko vredi. Čipovi za sortiranje i filter po lokaciji (npr. samo kombi). 🔒 = rezervisano planom posla.'],
+                    ['🔧 Artikli', 'Šifarnik materijala. ✏️ izmena, 📉 istorija nabavki po radnjama, 🗄 arhiviranje. Gore: predlozi minimuma i marži.'],
+                    ['🛒 Šoping lista', 'Sama se puni: kad zaliha padne ispod minimuma ili kad planu posla nešto fali. „✓ Kupljeno" odmah knjiži ulaz. Piše i gde je bilo najjeftinije.'],
+                    ['📋 Popis', 'Svođenje magacina: ukucaš koliko stvarno imaš na polici, app pokaže razlike i svede stanje jednim klikom.'],
+                    ['🧰 Kompleti', 'Šablon materijala koji ide zajedno (npr. montaža utičnice). Kod izlaza ga ubaciš ×N puta — ne kucaš stavku po stavku.'],
+                    ['💼 Poslovi', 'Svaki posao nosi svoj materijal, cenu rada i profit. Tu su plan, tovarenje, za poneti, specifikacija i ponuda.'],
+                    ['📐 Plan materijala', 'Na poslu upišeš šta će trebati — app rezerviše materijal, prati napredak (%) i šalje na šoping ono što fali.'],
+                    ['🚚 Tovarenje', 'Čeklista za jutarnje pakovanje kombija: preostali plan (sa lokacijama gde šta stoji) + „za poneti". Može da se kopira/podeli.'],
+                    ['🎒 Za poneti', 'Podsetnik po poslu: sitnice, alat, dokumenta. Štikliraš kad spakuješ.'],
+                    ['↩️ Povraćaj', 'U detaljima posla vratiš neutrošen materijal u magacin — posao se razduži, klijent ne plaća višak.'],
+                    ['🖨 Specifikacija', 'Dokument za naplatu: stvarno utrošen materijal po prodajnim cenama + rad. Štampa ili PDF.'],
+                    ['📄 Ponuda', 'Isti dokument, ali iz plana — daš klijentu PRE posla. Piše da je konačan obračun po utrošenom.'],
+                    ['🕘 Dnevnik', 'Sve što je rađeno, po danima, sa dnevnim sumama i filterima. „Šta sam radio u utorak?" — tu je.'],
+                    ['📈 Izveštaji', 'Moj mesec, profit po poslu, pregled po mesecima, otpis. Sve pare na jednom mestu.'],
+                    ['🔍 Lupa (gore)', 'Pretražuje sve odjednom: poslove, artikle, komplete, transakcije i napomene.'],
+                    ['📍 Lokacija', 'Na artiklu upišeš gde fizički stoji (kombi, polica, kutija). Vidi se pri unosu, u stanju i na tovarenju.'],
+                    ['🏷 Kategorija', 'Grupisanje artikala (kablovi, cevi...) — filteri i lakša pretraga.'],
+                    ['🎯 Minimalna zaliha', 'Prag ispod kog artikal iskače na šoping listu. Dugme „Minimumi" ih predlaže iz tvoje stvarne potrošnje.'],
+                    ['🛡 Ciljna marža', 'Upišeš npr. 40% — kad nabavna poraste a prodajna kaska, Savetnik javi i predloži novu cenu.'],
+                    ['📦 Pakovanje', 'Ako se artikal kupuje u pakovanjima (rolna 100m), šoping lista zaokružuje na cela pakovanja.'],
+                    ['🏪 Dobavljač', 'Upisuje se pri ulazu. Istorija (📉 na artiklu) i šoping lista ti kažu gde je bilo najjeftinije.'],
+                    ['🤖 Savetnik', 'Kartica na početnoj koja sama javlja: šta je pri kraju, šta fali za posao, gde gubiš maržu, šta je mrtvi kapital.'],
+                    ['🗄 Arhiva', 'Artikli koje više ne koristiš — sklonjeni iz svih lista, istorija ostaje. Vraćaš ih sa ♻️.'],
+                    ['💾 Backup', 'Podaci žive SAMO u ovom browseru! Redovno: Podešavanja → Izvezi (ili Podeli sebi na Viber/WhatsApp). Uvezi vraća.'],
+                    ['📄 CSV izvoz', 'Istorija i stanje u Excel formatu — za knjigovođu.'],
+                    ['📱 Prečice', 'Dugi pritisak na ikonu aplikacije (kad je instaliraš na telefon) → odmah Izlaz, Ulaz ili Otpis.'],
+                    ['✏️ Izmena transakcije', 'Na svakoj stavci u dnevniku: promeni količinu, datum, posao ili napomenu. Zaštita od minusa radi i tu.']
+                ];
+                const f = (this.vodicF || '').toLowerCase();
+                const stavke = VODIC.filter(([n, t]) => !f || n.toLowerCase().includes(f) || t.toLowerCase().includes(f));
+                if (!stavke.length) return `<div class="empty-state">Ništa za „${esc(this.vodicF)}".</div>`;
+                return stavke.map(([n, t]) => `<div class="list-item" style="padding:10px 12px;">
+                    <div class="item-title" style="font-size:13px;">${n}</div>
+                    <div class="item-meta" style="line-height:1.5;">${t}</div>
+                </div>`).join('');
+            }
+
             /* ---------- PODEŠAVANJA ---------- */
             render_podesavanja() {
                 const brM = this.db.get('materijali').length;
                 const brT = this.db.get('transakcije').length;
                 const brP = this.db.get('poslovi').length;
                 return `
+                    <div class="card">
+                        <div class="card-title">❓ Pomoć</div>
+                        <button class="btn btn-ghost" onclick="app.vodic()">Vodič — šta je šta u aplikaciji</button>
+                    </div>
+
                     <div class="card">
                         <div class="card-title">Backup podataka</div>
                         <p style="font-size:13px; color:#64748b; margin-bottom:12px;">Podaci žive samo u ovom browseru (${brM} materijala, ${brT} transakcija, ${brP} poslova). Redovno izvezi backup fajl!</p>

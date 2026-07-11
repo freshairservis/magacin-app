@@ -1,4 +1,4 @@
-const CACHE = 'magacin-v5';
+const CACHE = 'magacin-v6';
 const ASSETS = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
